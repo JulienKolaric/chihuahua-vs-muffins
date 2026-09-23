@@ -1,16 +1,19 @@
 # Chihuahua vs Muffin — OpenShift AI Feature Thread
 
-**Version:** draft 0.6 — English, copy-paste friendly  
+**Version:** draft 0.8 — English, copy-paste friendly  
 **Mode:** Ongoing **fil rouge** (no fixed duration) — progress milestone by milestone, with regular team syncs  
 **Goal:** Exercise the main **OpenShift AI** capabilities on one concrete use case  
 **Use case:** An image service that answers: is this photo a **chihuahua** or a **muffin**?  
-**Audience:** Mixed team (beginners welcome) exploring the platform together
+**Audience:** Mixed team (beginners welcome) exploring the platform together  
+**Team setup (4 people):** **one shared OpenShift AI cluster**, **one shared Data Science Project**, **one Workbench per person**, shared MinIO + one Model as a Service (+ TrustyAI later)
 
 > **How to use this doc**  
 > 1. Pick the next **Milestone** (M0 → M7).  
 > 2. Copy-paste the commands. Change only values marked `<LIKE_THIS>`.  
 > 3. At each team sync, fill the checkpoint table.  
 > 4. Do not rush — the point is to **see the platform features**, not to finish in one day.
+>
+> **Living document:** whenever a command, URL, or install step differs from reality during the fil rouge, **update this file immediately** so the next person is not blocked. Known fixes already folded in: macOS Kaggle venv (PEP 668), `mc` install options, OpenShift HTML errors on MinIO routes, Plan B ONNX is not shipped in the repo.
 
 ---
 
@@ -285,13 +288,31 @@ export BUCKET="muffin-chihuahua"
 
 ### Option 1 — MinIO Client (`mc`) — recommended
 
-Install `mc` (macOS example):
+`mc` is **not** installed by default on macOS (`zsh: command not found: mc`).
+
+**Install on macOS** (pick one):
 
 ```bash
-brew install minio/stable/mc
+# Preferred on Homebrew today
+brew install minio-mc
+
+# Or MinIO tap (may fail with HTTP 410 on some versions — if so, use minio-mc or binary below)
+# brew install minio/stable/mc
 ```
 
-Or Linux:
+Apple Silicon binary (if brew fails):
+
+```bash
+cd ~/Downloads
+curl -O https://dl.min.io/client/mc/release/darwin-arm64/mc
+chmod +x mc
+sudo mv mc /usr/local/bin/mc
+mc --version
+```
+
+Intel Mac: use `darwin-amd64` instead of `darwin-arm64`.
+
+Linux:
 
 ```bash
 curl -O https://dl.min.io/client/mc/release/linux-amd64/mc
@@ -299,15 +320,50 @@ chmod +x mc
 sudo mv mc /usr/local/bin/
 ```
 
-Configure and create the bucket:
+> If `brew` complains that **midnight-commander** already owns `mc`, do not force blindly — use the binary install and/or rename (`mcli`), or unlink midnight-commander only if you accept that trade-off.
+
+Configure and create the bucket.
+
+With an OpenShift **edge** route, TLS often needs `--insecure` (self-signed / cluster CA):
 
 ```bash
-mc alias set lab "$MINIO_ENDPOINT_EXTERNAL" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" --api S3v4
+mc alias set lab "$MINIO_ENDPOINT_EXTERNAL" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" --api S3v4 --insecure
 
-# If TLS cert is self-signed and mc complains, add --insecure:
-# mc alias set lab "$MINIO_ENDPOINT_EXTERNAL" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" --api S3v4 --insecure
+mc mb lab/"$BUCKET" --insecure
+mc ls lab/ --insecure
+```
 
-mc mb lab/"$BUCKET"
+### If `mc mb` returns HTML (OpenShift error page)
+
+You are **not** talking to the MinIO S3 API. Typical causes: wrong route (console instead of API), MinIO pod not Ready, or broken external TLS.
+
+Check:
+
+```bash
+echo "ENDPOINT=$MINIO_ENDPOINT_EXTERNAL"
+mc alias list lab
+oc -n lab-minio get pods,route
+curl -k -I "$MINIO_ENDPOINT_EXTERNAL"
+curl -k "$MINIO_ENDPOINT_EXTERNAL/minio/health/ready"
+```
+
+Recreate the alias on the **API** route (port 9000 / `minio-api`), not the console:
+
+```bash
+export MINIO_ENDPOINT_EXTERNAL="https://$(oc -n lab-minio get route minio-api -o jsonpath='{.spec.host}')"
+mc alias set lab "$MINIO_ENDPOINT_EXTERNAL" minio minio123 --api S3v4 --insecure
+mc mb lab/muffin-chihuahua --insecure
+```
+
+**Reliable workaround — port-forward** (avoids the public route entirely):
+
+```bash
+# Terminal 1
+oc -n lab-minio port-forward svc/minio 9000:9000
+
+# Terminal 2
+mc alias set lab http://127.0.0.1:9000 minio minio123 --api S3v4
+mc mb lab/muffin-chihuahua
 mc ls lab/
 ```
 
@@ -352,20 +408,41 @@ s3://muffin-chihuahua/
 ## B2. Download from Kaggle (laptop)
 
 1. Create a free Kaggle account  
-2. Kaggle → Account → **Create New Token** → downloads `kaggle.json`  
-3. Install and configure:
+2. Kaggle → **Settings** (or Account) → **API** → **Create New Token** → downloads `kaggle.json`  
+3. Install the Kaggle CLI in a **Python virtualenv** (required on modern macOS / Homebrew Python).
+
+> Do **not** run `pip3 install kaggle` on the system Python.  
+> You will get: `error: externally-managed-environment` (PEP 668).  
+> Use a venv instead.
 
 ```bash
-pip install kaggle
+# Create and activate a dedicated venv (once)
+python3 -m venv ~/lab-venv
+source ~/lab-venv/bin/activate
 
+# Install the CLI inside the venv
+pip install kaggle
+kaggle --version
+```
+
+Every **new terminal** where you need `kaggle`, activate first:
+
+```bash
+source ~/lab-venv/bin/activate
+```
+
+4. Place your API token:
+
+```bash
 mkdir -p ~/.kaggle
 mv ~/Downloads/kaggle.json ~/.kaggle/kaggle.json
 chmod 600 ~/.kaggle/kaggle.json
 ```
 
-4. Download and unzip:
+5. Download and unzip (venv must be active):
 
 ```bash
+source ~/lab-venv/bin/activate
 mkdir -p ~/lab-data && cd ~/lab-data
 
 kaggle datasets download -d samuelcortinhas/muffin-vs-chihuahua-image-classification
@@ -381,12 +458,19 @@ find muffin-chihuahua-raw -type d | head
 Find the real root folder:
 
 ```bash
-# Example: adjust if your unzip path is different
+# If you already see train/ here:
 export DATA_ROOT=~/lab-data/muffin-chihuahua-raw
+
+# If train/ is one level deeper, adjust, for example:
+# export DATA_ROOT=~/lab-data/muffin-chihuahua-raw/archive
+
 ls "$DATA_ROOT"
 ls "$DATA_ROOT/train"
+ls "$DATA_ROOT/train/chihuahua" | head
+ls "$DATA_ROOT/test/muffin" | head
 ```
 
+**Optional alternative:** `brew install pipx` then `pipx install kaggle` (installs an isolated app; only if you prefer pipx over a venv).
 ## B3. (Recommended) Build a smaller subset for the lab
 
 Full dataset training can be slow on CPU. A smaller subset is fine for early checkpoints:
@@ -678,13 +762,17 @@ print("Saved", out_dir / "model.pt")
 
 ### Plan B (if training is too slow)
 
-Before the lab, upload a ready `model.onnx` to:
+**There is no `model.onnx` in this Git repository** and no official public Chihuahua-vs-Muffin ONNX download used by this guide.
+
+Plan B means: **someone on the team trains once** (Part E), exports ONNX, and uploads it to:
 
 ```text
 s3://muffin-chihuahua/models/model.onnx
 ```
 
-Then skip training and jump to Part F.
+Then other sessions can skip training and jump to Part F (Model as a Service).
+
+Do not confuse this path with a generic ImageNet ResNet18 ONNX (1000 classes) — that will **not** answer `chihuahua` / `muffin`.
 
 ## E3. Export ONNX and upload to S3
 
@@ -1045,11 +1133,17 @@ Update live during the fil rouge:
 
 | Problem | What to try |
 |---------|-------------|
-| `mc` TLS certificate error | Add `--insecure`, or use in-cluster endpoint from a pod |
+| `zsh: command not found: mc` | Install: `brew install minio-mc` (or binary from dl.min.io — see A5) |
+| `brew install minio/stable/mc` → HTTP 410 | Use `brew install minio-mc` or the darwin binary in A5 |
+| `mc` TLS certificate error | Add `--insecure` on alias / commands |
+| `mc mb` returns HTML (OpenShift page) | Wrong route or MinIO down — use `minio-api` route + `--insecure`, or `oc port-forward svc/minio 9000:9000` |
 | Workbench cannot reach MinIO | Use `http://minio.lab-minio.svc.cluster.local:9000` |
 | Empty bucket listing | Wrong key / bucket / endpoint |
-| Kaggle download fails | `chmod 600 ~/.kaggle/kaggle.json` |
-| Training very slow | Use subset; fewer epochs; Plan B ONNX |
+| `pip3 install kaggle` → externally-managed-environment | Use a venv: `python3 -m venv ~/lab-venv` then `source ~/lab-venv/bin/activate` and `pip install kaggle` |
+| `kaggle: command not found` | Activate the venv: `source ~/lab-venv/bin/activate` |
+| Kaggle download / auth fails | Check `~/.kaggle/kaggle.json` exists and `chmod 600 ~/.kaggle/kaggle.json` |
+| Where is `model.onnx`? | Not in the repo — produce it in M3, or use Plan B after one teammate exports it |
+| Training very slow | Use subset; fewer epochs; Plan B ONNX (team-produced) |
 | Model never Ready | Wrong ONNX path; runtime wants a folder; check serving pod logs |
 | TrustyAI pod missing | Admin must enable component + install service in the project |
 | TrustyAI errors with non-OVMS models | Serve with **OpenVINO Model Server** only |
@@ -1077,4 +1171,4 @@ oc -n chihuahua-vs-muffin logs -l app=trustyai --tail=100
 
 ---
 
-*Draft 0.6 — Ongoing OpenShift AI feature thread (Model as a Service, TrustyAI, Registry, Pipelines) using Chihuahua vs Muffin.*
+*Draft 0.8 — Living OpenShift AI feature thread. Update this file whenever reality differs from the written steps.*
