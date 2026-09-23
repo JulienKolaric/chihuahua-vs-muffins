@@ -1,24 +1,59 @@
-# LAB — Chihuahua vs Muffin on OpenShift AI
+# Chihuahua vs Muffin — OpenShift AI Feature Thread
 
-**Version:** draft 0.5 — English, copy-paste friendly  
-**Goal:** Test OpenShift AI end-to-end with a small image model  
-**Example:** Is this photo a **chihuahua** or a **muffin**?  
-**Audience:** Beginners on OpenShift AI / ML on Kubernetes  
-**Time:** Half day (or full day if you train from scratch)
+**Version:** draft 0.6 — English, copy-paste friendly  
+**Mode:** Ongoing **fil rouge** (no fixed duration) — progress milestone by milestone, with regular team syncs  
+**Goal:** Exercise the main **OpenShift AI** capabilities on one concrete use case  
+**Use case:** An image service that answers: is this photo a **chihuahua** or a **muffin**?  
+**Audience:** Mixed team (beginners welcome) exploring the platform together
 
-> **How to use this doc:** Follow the steps in order.  
-> Copy each command block as-is, then change only the values marked `<LIKE_THIS>`.
+> **How to use this doc**  
+> 1. Pick the next **Milestone** (M0 → M7).  
+> 2. Copy-paste the commands. Change only values marked `<LIKE_THIS>`.  
+> 3. At each team sync, fill the checkpoint table.  
+> 4. Do not rush — the point is to **see the platform features**, not to finish in one day.
 
 ---
 
-## Success criteria
+## The story (why this use case)
 
-At the end you have:
+We build a small **Model as a Service**:
 
-1. An API URL that accepts an image and returns `chihuahua` or `muffin`
-2. A short team note: what worked / what broke on the platform
+1. Photos live in shared object storage  
+2. The team trains a classifier in a Workbench  
+3. The model is versioned and **published as an API**  
+4. Anyone (or any app) can call that API  
+5. **TrustyAI** watches for **data drift** when people send weird photos (owls, cookies, screenshots…)
 
-We are **not** chasing 99% accuracy. We are testing **OpenShift AI**.
+Same business pattern as a real project: *data → train → register → serve → monitor*.
+
+We are **not** chasing Kaggle leaderboard scores.  
+We are **showcasing OpenShift AI**.
+
+---
+
+## OpenShift AI features this thread covers
+
+| Milestone | Platform feature | What you prove |
+|-----------|------------------|----------------|
+| **M0** | Cluster prep | OpenShift AI is usable by the team |
+| **M1** | Object storage + **Data Connection** | Shared S3 for data and models |
+| **M2** | **Data Science Project** + **Workbench** | Collaborative ML workspace |
+| **M3** | Training in Workbench | You can train and export ONNX on the platform |
+| **M4** | **Model as a Service** (Model Serving / OVMS) | Model is an HTTP API others can call |
+| **M5** | **Model Registry** (optional but recommended) | Versions of the model, not “a file on disk” |
+| **M6** | **TrustyAI** (drift + controls) | Detect when live inputs leave the training world |
+| **M7** | **Data Science Pipelines** (optional) | Repeatable train → evaluate → publish flow |
+
+Related controls you will also touch:
+
+- Client **confidence threshold** (reject low-confidence answers)  
+- Optional **token auth** on the inference endpoint  
+- Team **checkpoint reviews** (what worked / blocked)
+
+Official TrustyAI docs (cluster version may differ):  
+[Configure TrustyAI](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/monitoring_your_ai_systems/configuring-trustyai_monitor) ·  
+[Set up TrustyAI for a project](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/monitoring_your_ai_systems/setting-up-trustyai-for-your-project_monitor) ·  
+[Monitor data drift](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/monitoring_your_ai_systems/monitoring-data-drift_drift-monitoring)
 
 ---
 
@@ -27,29 +62,54 @@ We are **not** chasing 99% accuracy. We are testing **OpenShift AI**.
 | Name in the product | Meaning |
 |---------------------|---------|
 | **OpenShift** | The Kubernetes platform (cluster) |
-| **OpenShift AI (RHOAI)** | The AI add-on on top of OpenShift |
-| **Data Science Project** | Your shared team workspace |
+| **OpenShift AI (RHOAI)** | The AI layer on OpenShift |
+| **Data Science Project** | Shared team workspace (namespace) |
 | **Workbench** | Browser IDE (JupyterLab) with Python / PyTorch |
 | **Data Connection** | Saved link from OpenShift AI → S3 storage |
 | **S3 / MinIO** | Object storage for images and model files |
 | **Training** | Teaching the model with labeled photos |
 | **ONNX** | Portable model file format for serving |
-| **Model Serving** | Running the model behind an HTTP API |
+| **Model Serving / Model as a Service** | Model exposed as a managed HTTP API |
+| **Model Registry** | Catalog of model versions |
+| **TrustyAI** | Monitoring service (drift, bias, fairness metrics) |
+| **Data Science Pipelines** | Automated multi-step ML workflows |
 | **Endpoint / API** | The URL you call with an image |
 
 ---
 
-## What you need before starting
+## How team syncs work
 
-- [ ] Access to an OpenShift cluster with **OpenShift AI** installed
-- [ ] `oc` CLI logged in (`oc whoami` works)
-- [ ] Rights to create projects / deploy apps (or an admin helps for MinIO)
-- [ ] A browser for the OpenShift AI dashboard
-- [ ] (Optional) GPU for faster training — CPU works with a small dataset
+Use this short agenda every time you meet:
+
+1. Which milestone are we on?  
+2. Demo what works (screen share).  
+3. Update the checkpoint table (OK / Blocked / Next).  
+4. Pick one owner for the next milestone.
+
+### Checkpoint log (copy for each sync)
+
+| Date | Milestone | Status | Demo done? | Blockers | Next owner |
+|------|-----------|--------|------------|----------|------------|
+| | M_ | OK / Partial / Blocked | Yes / No | | |
 
 ---
 
-# PART A — Storage (MinIO as S3)
+## Prerequisites (M0)
+
+- [ ] OpenShift cluster with **OpenShift AI** installed  
+- [ ] `oc` CLI logged in (`oc whoami` works)  
+- [ ] Rights to create projects / deploy apps (admin help OK for MinIO + TrustyAI)  
+- [ ] OpenShift AI dashboard access for everyone  
+- [ ] **Model Serving** available (OpenVINO Model Server / KServe)  
+- [ ] **TrustyAI** component enabled by cluster admin (needed before M6)  
+- [ ] (Optional) GPU — CPU is fine with a smaller dataset  
+- [ ] (Optional) Model Registry and Pipelines components enabled if you want M5 / M7  
+
+**Admin note for TrustyAI:** only **one** TrustyAI service instance per project; TrustyAI supports models served with **OpenVINO Model Server (OVMS)**. See Red Hat docs linked above.
+
+---
+
+# PART A — Milestone M1: Storage (MinIO as S3)
 
 We install a small **MinIO** server on the cluster.  
 It speaks the same API as Amazon S3. Perfect for labs.
@@ -264,7 +324,7 @@ aws --endpoint-url "$MINIO_ENDPOINT_EXTERNAL" s3 ls
 
 ---
 
-# PART B — Import the dataset
+# PART B — Milestone M1 (continued): Import the dataset
 
 ## B1. What the dataset is
 
@@ -329,7 +389,7 @@ ls "$DATA_ROOT/train"
 
 ## B3. (Recommended) Build a smaller subset for the lab
 
-Full dataset training can be slow on CPU. For a half-day lab, use a subset:
+Full dataset training can be slow on CPU. A smaller subset is fine for early checkpoints:
 
 ```bash
 export FULL="$DATA_ROOT"
@@ -373,7 +433,7 @@ aws --endpoint-url "$MINIO_ENDPOINT_EXTERNAL" s3 ls "s3://$BUCKET/train/"
 
 ---
 
-# PART C — OpenShift AI project + Data Connection
+# PART C — Milestone M2: Data Science Project + Data Connection + Workbench
 
 ## C1. Create the Data Science Project
 
@@ -433,7 +493,7 @@ You should land in **JupyterLab**.
 
 ---
 
-# PART D — From the Workbench: talk to S3
+# PART D — Milestone M2/M3: From the Workbench, talk to S3
 
 Open a notebook or terminal inside Jupyter.
 
@@ -525,7 +585,7 @@ print("train/muffin:", len(list((local_root / "train/muffin").glob("*"))))
 
 ---
 
-# PART E — Train a small model (PyTorch)
+# PART E — Milestone M3: Train a small model (PyTorch)
 
 ## E1. What we do (beginner view)
 
@@ -664,33 +724,29 @@ print(f"Uploaded s3://{bucket}/{key}")
 
 ---
 
-# PART F — Deploy Model Serving
 
-Exact UI labels change slightly between OpenShift AI versions. The idea is always the same.
+# PART F — Milestone M4: Model as a Service
 
-## F1. UI steps
+This is the core “platform” moment: the model is no longer a notebook file.  
+It is a **service** with a URL that teammates and apps can call.
+
+## F1. Deploy with Model Serving (UI)
 
 1. Open project `chihuahua-vs-muffin`
 2. Go to **Models** / **Model serving**
-3. Configure a serving runtime if needed → choose **OpenVINO Model Server** (or the ONNX-compatible runtime on your cluster)
+3. Serving runtime: **OpenVINO Model Server** (required later for TrustyAI)
 4. Deploy model:
-   - Name: `muffin-chihuahua`
-   - Framework / format: **ONNX**
-   - Location: Data Connection `minio-lab`
-   - Path: `models/model.onnx`  
-     (or the folder your runtime expects — some want a directory)
+   - Name / model ID: `muffin-chihuahua` (remember this ID for TrustyAI)
+   - Format: **ONNX**
+   - Data Connection: `minio-lab`
+   - Path: `models/model.onnx` (or folder layout below)
 5. Wait until status is **Ready**
 6. Copy the **Inference endpoint** URL
+7. (Recommended) enable **token authentication** if your cluster offers it
 
-## F2. If your runtime wants a folder, not a single file
+**Feature shown:** Model as a Service on OpenShift AI.
 
-Some OpenVINO setups expect:
-
-```text
-s3://muffin-chihuahua/models/muffin-chihuahua/1/model.onnx
-```
-
-Create that layout:
+## F2. If the runtime wants a versioned folder
 
 ```bash
 mc cp lab/muffin-chihuahua/models/model.onnx \
@@ -698,103 +754,290 @@ mc cp lab/muffin-chihuahua/models/model.onnx \
 mc ls --recursive lab/muffin-chihuahua/models/
 ```
 
-Then set the model path to `models/muffin-chihuahua` (parent folder), depending on UI help text.
+Point the UI at `models/muffin-chihuahua` if it asks for a model repository directory.
 
-## F3. Smoke-test the endpoint from the Workbench
+## F3. Call the service from a Workbench
 
-Your cluster’s request format may differ (KServe v1/v2, OpenVINO).  
-Start by checking docs linked from the model details page, then adapt.
-
-Minimal pattern (pseudo / often close to OpenVINO REST):
+Exact JSON shape depends on your runtime (OpenVINO / KServe v1 or v2).  
+Use the **example request** on the model details page in OpenShift AI, then adapt.
 
 ```python
-import base64
-import json
+import os
 import requests
 from pathlib import Path
-from PIL import Image
-import numpy as np
 
-ENDPOINT = "<PASTE_INFERENCE_URL_HERE>"  # from the UI
-TOKEN = "<OPTIONAL_BEARER_TOKEN>"        # if auth is enabled
+ENDPOINT = "<PASTE_INFERENCE_URL_HERE>"
+TOKEN = os.environ.get("MODEL_TOKEN", "")  # optional
 
-img_path = Path("/opt/app-root/src/data/muffin-chihuahua/test/muffin")
-sample = next(img_path.glob("*"))
-
-# Many servers expect raw bytes or a preprocessed tensor.
-# Check your runtime's example request in the OpenShift AI UI.
 headers = {"Content-Type": "application/json"}
 if TOKEN:
     headers["Authorization"] = f"Bearer {TOKEN}"
 
-with open(sample, "rb") as f:
-    b64 = base64.b64encode(f.read()).decode()
-
-# EXAMPLE payload — adjust to your runtime
-payload = {
-    "inputs": [
-        {
-            "name": "input",
-            "shape": [1, 3, 224, 224],
-            "datatype": "FP32",
-            "data": [],  # fill with preprocessed tensor if required
-        }
-    ]
-}
-
-print("Sample image:", sample)
-print("Next: adapt payload using the example from your Model Serving page.")
+sample = next(Path("/opt/app-root/src/data/muffin-chihuahua/test/muffin").glob("*"))
+print("Using sample:", sample)
 print("Endpoint:", ENDPOINT)
+print("Paste the official example payload from the OpenShift AI UI here.")
 ```
 
-### Simple confidence rule (client-side)
-
-After you get class scores:
+### Control #1 — confidence threshold (client-side guardrail)
 
 ```python
+import numpy as np
+
 classes = ["chihuahua", "muffin"]
-# probs = ... from model output (softmax)
-# conf = float(max(probs))
-# label = classes[int(probs.argmax())]
+# logits_or_probs = <array from model response>
+# probs = softmax(logits_or_probs)  # if you received logits
+# conf = float(np.max(probs))
+# label = classes[int(np.argmax(probs))]
 # if conf < 0.80:
-#     print("uncertain / human review")
+#     result = {"label": "uncertain", "reason": "human_review_required", "confidence": conf}
 # else:
-#     print(label, conf)
+#     result = {"label": label, "confidence": conf}
+# print(result)
 ```
 
----
+**Feature shown:** basic quality control before you trust the answer.
 
-# PART G — Team checklist (fill during the lab)
+### Control #2 — out-of-domain smoke test
 
-| Step | OK / Fail / Partial | Notes |
-|------|---------------------|-------|
-| MinIO installed | | |
-| Bucket created | | |
-| Dataset uploaded | | |
-| Data Science Project | | |
-| Data Connection | | |
-| Workbench starts | | |
-| Can list S3 from notebook | | |
-| Training runs | | |
-| ONNX uploaded | | |
-| Model Serving Ready | | |
-| API returns a label | | |
+Send:
+
+1. a clear muffin  
+2. a clear chihuahua  
+3. something else (cat, croissant, screenshot)
+
+Discuss as a team: what should the **service** do vs what should **TrustyAI** detect?
 
 ---
 
-# PART H — Timing (half day)
+# PART G — Milestone M5: Model Registry (recommended)
 
-| Time | What |
-|------|------|
-| 0:00 | Intro + Part A (MinIO) |
-| 0:40 | Part B (dataset upload) — better if done **before** the lab |
-| 1:00 | Part C (project, connection, workbench) |
-| 1:30 | Part D + E (download + train + ONNX) or Plan B |
-| 2:45 | Part F (Model Serving) |
-| 3:30 | Call the API + confidence rule |
-| 3:50 | Fill Part G checklist together |
+If Model Registry is enabled on your cluster, register the ONNX artifact so the team shares **versions**, not a random S3 path.
 
-**Strong recommendation:** Do **Part A + Part B before the lab day**, so the live session starts at Part C.
+## G1. UI path (typical)
+
+1. OpenShift AI → **Model registry** (or from the project)  
+2. Register model `muffin-chihuahua`  
+3. Add version `v1` pointing to `s3://muffin-chihuahua/models/model.onnx` (via Data Connection)  
+4. Deploy **from the registry** to Model Serving (if your version supports one-click deploy)
+
+## G2. Why this matters in the fil rouge
+
+| Without registry | With registry |
+|------------------|---------------|
+| “Which ONNX did we serve?” | Version `v1`, `v2`, … |
+| Easy to overwrite by mistake | Explicit promotion |
+| Hard for teammates to discover | Shared catalog |
+
+**Sync question:** Can a new teammate find the current production model without asking in chat?
+
+If Model Registry is not installed yet, skip M5 and note it as a platform gap in the checkpoint log.
+
+---
+
+# PART H — Milestone M6: TrustyAI controls
+
+TrustyAI is how OpenShift AI helps you **monitor** a served model.
+
+For this use case we focus on **data drift**:
+
+> Training world = muffins + chihuahuas.  
+> If users start sending owls, cookies, or memes, the input distribution changes.  
+> TrustyAI should show that the live traffic no longer matches training.
+
+### Important constraints (from Red Hat docs)
+
+- Cluster admin must **enable TrustyAI** and install **one TrustyAI service per project**  
+- TrustyAI supports models on **OpenVINO Model Server (OVMS)** — which is why M4 uses OVMS  
+- UI labels and routes differ slightly by OpenShift AI version — keep the official doc tab open
+
+## H1. Admin: install TrustyAI in the project
+
+Ask your cluster admin to:
+
+1. Enable the TrustyAI component in the OpenShift AI Operator  
+2. Install the TrustyAI service into namespace `chihuahua-vs-muffin` (**only one instance**)  
+3. Confirm model monitoring / inference data capture is configured for the model serving platform  
+
+Refs:  
+https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/monitoring_your_ai_systems/configuring-trustyai_monitor
+
+Verify the service exists:
+
+```bash
+oc -n chihuahua-vs-muffin get pods | grep -i trusty
+oc -n chihuahua-vs-muffin get route | grep -i trusty
+```
+
+Get the TrustyAI route:
+
+```bash
+export TRUSTY_ROUTE="https://$(oc -n chihuahua-vs-muffin get route -o jsonpath='{.items[?(@.metadata.name=="trustyai-service")].spec.host}')"
+# If the name differs, list routes and pick the TrustyAI one:
+oc -n chihuahua-vs-muffin get route
+echo "TRUSTY_ROUTE=$TRUSTY_ROUTE"
+```
+
+Get a token (user token or service account — follow your cluster policy):
+
+```bash
+export TOKEN="$(oc whoami -t)"
+```
+
+## H2. Upload a TRAINING baseline to TrustyAI
+
+TrustyAI compares **live inference traffic** to a tagged **TRAINING** reference.
+
+For an image model, the monitored values are the **numeric tensors** OpenVINO sends/receives (inputs/outputs), not the JPEG files themselves.  
+Practical approach for this fil rouge:
+
+1. Run a batch of **in-domain** inferences (real muffin / chihuahua test images) so TrustyAI observes “normal” traffic  
+2. Upload or tag a **TRAINING** reference dataset through the TrustyAI API (format = TrustyAI / model payload schema for your version)  
+3. Later, send **out-of-domain** images and watch drift metrics move
+
+Minimal health check — does TrustyAI answer?
+
+```bash
+curl -k -H "Authorization: Bearer $TOKEN" \
+  "$TRUSTY_ROUTE/info" | jq .
+```
+
+List known models / observations (endpoint names can vary by version):
+
+```bash
+curl -k -H "Authorization: Bearer $TOKEN" \
+  "$TRUSTY_ROUTE/info/observation/metadata" | jq .
+```
+
+Upload training / reference data (shape must match your model’s input/output schema).  
+Use the payload structure from your cluster doc page **“Send training data to TrustyAI”**.  
+Pattern:
+
+```bash
+# PSEUDO — adapt field names to your OpenShift AI version + model schema
+curl -k -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST "$TRUSTY_ROUTE/data/upload" \
+  -d @trustyai-training-payload.json
+```
+
+`trustyai-training-payload.json` must include at least:
+
+- `modelId`: same as served model (`muffin-chihuahua`)  
+- a tag such as `TRAINING` / `referenceTag`  
+- input + output numeric arrays consistent with OVMS
+
+> Tip: after a few successful in-domain API calls, inspect what TrustyAI already observed, then align your TRAINING upload to that schema (`/info` endpoints help).
+
+## H3. Schedule a drift metric (MeanShift)
+
+From Red Hat “Monitoring data drift”:
+
+```bash
+curl -k -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST "$TRUSTY_ROUTE/metrics/drift/meanshift/request" \
+  -d '{
+    "modelId": "muffin-chihuahua",
+    "referenceTag": "TRAINING"
+  }'
+```
+
+Other drift metrics exist (KSTest, ApproxKSTest, FourierMMD) if MeanShift is a poor fit for your distributions — see:
+https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/monitoring_your_ai_systems/monitoring-data-drift_drift-monitoring
+
+## H4. Generate traffic: normal vs drifted
+
+**Normal (should look like training):**
+
+```text
+test/muffin/* and test/chihuahua/*  →  call the Model as a Service endpoint many times
+```
+
+**Drifted (should look different):**
+
+```text
+photos of owls, cats, chocolate chip cookies, random screenshots
+```
+
+Send both batches from a notebook (reuse your Part F client).
+
+## H5. Read drift in OpenShift Observe
+
+1. OpenShift console → **Observe** → **Metrics**  
+2. Custom query examples:
+
+```promql
+trustyai_model_observations_total
+```
+
+```promql
+trustyai_meanshift
+```
+
+**How to read MeanShift (beginner version):**
+
+- Values are **p-values**  
+- Close to **1.0** → live data still looks like training  
+- Below **~0.05** → statistically significant drift  
+
+**Team demo script for a sync:**
+
+1. Show Model as a Service returning `muffin` / `chihuahua`  
+2. Show TrustyAI observations increasing  
+3. Flood with out-of-domain images  
+4. Show MeanShift drop / alert discussion  
+5. Decide the **control action**: human review, block, or retrain (M7)
+
+## H6. Control actions (what TrustyAI enables)
+
+| Signal | Suggested team action |
+|--------|------------------------|
+| High confidence + in-domain | Return label |
+| Low confidence (&lt; 0.80) | Return `uncertain` (client guardrail) |
+| Drift alert (TrustyAI) | Investigate inputs; maybe collect new labeled data |
+| Persistent drift | Retrain / new model version (Registry v2) + redeploy |
+
+**Feature shown:** monitoring + operational controls around Model as a Service.
+
+---
+
+# PART I — Milestone M7: Data Science Pipelines (optional)
+
+When M3–M6 work manually, automate the happy path.
+
+Typical pipeline steps:
+
+1. Pull dataset from S3  
+2. Train + evaluate  
+3. If accuracy &gt; threshold → export ONNX  
+4. Upload to S3 / register new Model Registry version  
+5. (Optional) trigger redeploy
+
+**UI path:** project → **Pipelines** → create pipeline from notebook or Python DSL (kfp), depending on your OpenShift AI version.
+
+**Sync question:** Can we retrain without re-running every notebook cell by hand?
+
+---
+
+# PART J — Global feature checklist
+
+Update live during the fil rouge:
+
+| Feature | Milestone | Status | Evidence (URL, screenshot, metric) |
+|---------|-----------|--------|-------------------------------------|
+| Data Science Project | M2 | | |
+| Workbench (PyTorch) | M2 | | |
+| Data Connection (S3) | M1–M2 | | |
+| Train + ONNX export | M3 | | |
+| Model as a Service (OVMS) | M4 | | |
+| Auth token on endpoint | M4 | | |
+| Confidence guardrail | M4 | | |
+| Model Registry | M5 | | |
+| TrustyAI service in project | M6 | | |
+| TrustyAI TRAINING baseline | M6 | | |
+| Drift metric + Observe graph | M6 | | |
+| Pipelines | M7 | | |
 
 ---
 
@@ -802,62 +1045,36 @@ classes = ["chihuahua", "muffin"]
 
 | Problem | What to try |
 |---------|-------------|
-| `mc` TLS certificate error | Add `--insecure` to `mc` commands, or use in-cluster endpoint from a pod |
-| Workbench cannot reach MinIO | Use `http://minio.lab-minio.svc.cluster.local:9000` (not the public route) |
-| Empty bucket listing | Wrong access key / bucket name / endpoint |
-| Kaggle download fails | Check `~/.kaggle/kaggle.json` permissions (`chmod 600`) |
-| Training very slow | Use the subset; reduce epochs; use Plan B ONNX |
-| Model never becomes Ready | Path to ONNX wrong; runtime expects a folder; check pod logs: `oc logs -n chihuahua-vs-muffin -l <serving-label>` |
-| Prediction always wrong | Train and serve **must** use the same image size and normalization |
-| PVC pending for MinIO | Cluster has no storage class / no capacity — ask your cluster admin |
-
-Check MinIO logs:
+| `mc` TLS certificate error | Add `--insecure`, or use in-cluster endpoint from a pod |
+| Workbench cannot reach MinIO | Use `http://minio.lab-minio.svc.cluster.local:9000` |
+| Empty bucket listing | Wrong key / bucket / endpoint |
+| Kaggle download fails | `chmod 600 ~/.kaggle/kaggle.json` |
+| Training very slow | Use subset; fewer epochs; Plan B ONNX |
+| Model never Ready | Wrong ONNX path; runtime wants a folder; check serving pod logs |
+| TrustyAI pod missing | Admin must enable component + install service in the project |
+| TrustyAI errors with non-OVMS models | Serve with **OpenVINO Model Server** only |
+| No drift signal | Not enough inference traffic; TRAINING tag mismatch; wrong `modelId` |
+| Prediction always wrong | Same preprocess for train and serve |
 
 ```bash
 oc -n lab-minio logs deploy/minio --tail=100
-```
-
-Check pods in the AI project:
-
-```bash
 oc -n chihuahua-vs-muffin get pods
-oc -n chihuahua-vs-muffin get routes
+oc -n chihuahua-vs-muffin get route
+oc -n chihuahua-vs-muffin logs -l app=trustyai --tail=100
 ```
-
----
-
-# What we skip on purpose (later)
-
-1. Automated pipelines (retrain when new images arrive)  
-2. Model Registry versioning  
-3. TrustyAI drift monitoring  
-4. Service Mesh rate limits  
-
-First make the simple path work: **storage → train → serve → call**.
-
----
-
-# Pre-lab owner checklist
-
-| Task | Owner | Done? |
-|------|-------|-------|
-| Install MinIO + create bucket | Ops | ☐ |
-| Download + subset + upload dataset | Facilitator | ☐ |
-| Dry-run: train → ONNX → serve → predict | Facilitator | ☐ |
-| Optional Plan B `model.onnx` on S3 | Facilitator | ☐ |
-| Confirm PyTorch workbench image exists | Ops | ☐ |
-| Confirm Model Serving / OpenVINO available | Ops | ☐ |
-| Invite all users to the project | Ops | ☐ |
 
 ---
 
 # Useful links
 
 - Dataset: https://www.kaggle.com/datasets/samuelcortinhas/muffin-vs-chihuahua-image-classification  
-- Background paper: https://arxiv.org/abs/1801.09573  
-- MinIO docs: https://min.io/docs/minio/linux/index.html  
-- Example “DIY serving” (FastAPI) for comparison: https://github.com/fabianjkrueger/muffin_vs_chihuahua  
+- Paper: https://arxiv.org/abs/1801.09573  
+- MinIO: https://min.io/docs/minio/linux/index.html  
+- TrustyAI configure: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/monitoring_your_ai_systems/configuring-trustyai_monitor  
+- TrustyAI project setup: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.4/html/monitoring_your_ai_systems/setting-up-trustyai-for-your-project_monitor  
+- TrustyAI data drift: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/monitoring_your_ai_systems/monitoring-data-drift_drift-monitoring  
+- DIY FastAPI comparison: https://github.com/fabianjkrueger/muffin_vs_chihuahua  
 
 ---
 
-*Draft 0.5 — Copy-paste lab to test OpenShift AI with Chihuahua vs Muffin.*
+*Draft 0.6 — Ongoing OpenShift AI feature thread (Model as a Service, TrustyAI, Registry, Pipelines) using Chihuahua vs Muffin.*
