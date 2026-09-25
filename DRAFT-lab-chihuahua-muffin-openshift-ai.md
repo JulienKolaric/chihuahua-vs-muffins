@@ -1,6 +1,6 @@
 # Chihuahua vs Muffin — OpenShift AI Feature Thread
 
-**Version:** draft 0.12 — English, copy-paste friendly  
+**Version:** draft 0.14 — English, copy-paste friendly  
 **OpenShift AI version:** **Self-Managed 3.5** (source of truth for all platform steps)  
 **Mode:** Ongoing **fil rouge** (no fixed duration) — progress milestone by milestone, with regular team syncs  
 **Goal:** Exercise the main **OpenShift AI** capabilities on one concrete use case  
@@ -18,7 +18,7 @@
 > [Red Hat OpenShift AI Self-Managed 3.5](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5).  
 > If this lab guide disagrees with that documentation, **the Red Hat 3.5 docs win** — then update this file.
 >
-> **Living document:** whenever a command, URL, or install step differs from reality during the fil rouge, **update this file immediately** so the next person is not blocked. Known fixes already folded in: macOS Kaggle venv (PEP 668), `mc` install options, OpenShift HTML errors on MinIO routes, Plan B ONNX is not shipped in the repo, Workbench needs `%pip install onnx` (same kernel) before `torch.onnx.export`, F1 deploy wizard validated with screenshots (`docs/screenshots/f1-*.png`).
+> **Living document:** whenever a command, URL, or install step differs from reality during the fil rouge, **update this file immediately** so the next person is not blocked. Known fixes already folded in: macOS Kaggle venv (PEP 668), `mc` install options, OpenShift HTML errors on MinIO routes, Plan B ONNX is not shipped in the repo, Workbench needs `%pip install onnx` (same kernel) before `torch.onnx.export`, F1 deploy wizard validated with screenshots, **F2 OVMS versioned path** required when UI shows Ready but **No model availability**.
 
 ---
 
@@ -804,19 +804,23 @@ print("Saved", out_dir / "model.pt")
 
 ### Plan B (if training is too slow)
 
-**There is no `model.onnx` in this Git repository** and no official public Chihuahua-vs-Muffin ONNX download used by this guide.
+**There is no ONNX in this Git repository** and no official public Chihuahua-vs-Muffin ONNX download used by this guide.
 
-Plan B means: **someone on the team trains once** (Part E), exports ONNX, and uploads it to:
+Plan B means: **someone on the team trains once** (Part E), exports ONNX, and uploads it already in the **OVMS layout**:
 
 ```text
-s3://muffin-chihuahua/models/model.onnx
+s3://muffin-chihuahua/models/muffin-chihuahua/1/model.onnx
 ```
 
-Then other sessions can skip training and jump to Part F (single-model serving).
+Then other sessions skip training and jump to Part F (Path in UI = `models/muffin-chihuahua`).
 
 Do not confuse this path with a generic ImageNet ResNet18 ONNX (1000 classes) — that will **not** answer `chihuahua` / `muffin`.
 
-## E3. Export ONNX and upload to S3
+## E3. Export ONNX and upload to S3 (OVMS layout from the start)
+
+> **Do this so you skip the later `mc cp` fix.**  
+> OpenVINO Model Server expects: `models/<model-name>/1/model.onnx`  
+> Deploy UI **Path** = `models/muffin-chihuahua` (the folder).
 
 If you skipped D1 or hit `Module onnx is not installed` / `No module named 'onnx'`, run this **in a notebook cell** first:
 
@@ -839,13 +843,12 @@ import boto3
 import os
 from pathlib import Path
 
-# Optional: silence is fine; DeprecationWarning about legacy ONNX export is expected on newer PyTorch
 model.eval()
-dummy = torch.randn(1, 3, 224, 224, device=DEVICE)
-onnx_path = Path("/opt/app-root/src/models/model.onnx")
+
+# Local export path (Workbench disk)
+onnx_path = Path("/opt/app-root/src/models/muffin-chihuahua/1/model.onnx")
 onnx_path.parent.mkdir(parents=True, exist_ok=True)
 
-# Keep model + dummy on the same device for export
 export_model = model.to("cpu")
 export_model.eval()
 dummy_cpu = torch.randn(1, 3, 224, 224)
@@ -861,7 +864,7 @@ torch.onnx.export(
 print("ONNX written:", onnx_path)
 print("Size (MB):", round(onnx_path.stat().st_size / 1e6, 2))
 
-# Upload
+# Upload straight into the OVMS versioned key
 endpoint = os.environ.get("AWS_S3_ENDPOINT", "http://minio.lab-minio.svc.cluster.local:9000")
 s3 = boto3.client(
     "s3",
@@ -870,10 +873,22 @@ s3 = boto3.client(
     aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", "minio123"),
 )
 bucket = os.environ.get("AWS_S3_BUCKET", "muffin-chihuahua")
-key = "models/model.onnx"
+key = "models/muffin-chihuahua/1/model.onnx"  # ← correct for OVMS from day 1
 s3.upload_file(str(onnx_path), bucket, key)
 print(f"Uploaded s3://{bucket}/{key}")
+
+# Optional: also keep a flat copy for humans
+s3.upload_file(str(onnx_path), bucket, "models/model.onnx")
+print(f"Also uploaded s3://{bucket}/models/model.onnx (optional flat copy)")
 ```
+
+After E3, in **F1** set:
+
+| Field | Value |
+|-------|--------|
+| Path | `models/muffin-chihuahua` |
+
+You should **not** need F2 unless someone already uploaded only `models/model.onnx`.
 
 ---
 
@@ -917,13 +932,13 @@ Wizard steps: **Model details** → **Model deployment** → **Advanced settings
 |-------|-----------------|
 | **Model location** | `Existing connection` |
 | **Connection** | `minio-lab` |
-| **Path** | `models/model.onnx` worked for UI **Ready**, but OVMS inference often needs the **versioned folder** (see below / F2) |
+| **Path** | Prefer **`models/muffin-chihuahua`** (versioned folder — see **F2**, validated). `models/model.onnx` can show UI Ready but **No model availability** |
 | **Model type** | `Predictive model` |
 
 Notes:
 
-- UI **Ready** with path `models/model.onnx` is possible, but calls like `/v2/models/muffin-chihuahua` may still return **`Model with requested version is not found`**.  
-- **For inference, prefer Path = `models/muffin-chihuahua`** with object `models/muffin-chihuahua/1/model.onnx` (F2).  
+- First deploy may use `models/model.onnx` and still show UI **Ready** — that is **not** enough.  
+- If details show **Model availability = No model availability**, apply **F2** (versioned path) before testing `/infer`.  
 - Do **not** use a root path (UI forbids it).
 
 Click **Next**.
@@ -988,7 +1003,7 @@ Click **Next** → **Review** → **Deploy** (or save if editing).
 
 ```text
 Connection:     minio-lab
-Path:           models/model.onnx
+Path:           models/muffin-chihuahua   ← versioned OVMS folder (REQUIRED for inference)
 Type:           Predictive model
 Name:           muffin-chihuahua
 Framework:      onnx - 1
@@ -999,18 +1014,78 @@ External route: yes
 Token auth:     optional (recommended on)
 Strategy:       Rolling update
 Timeout:        30s
-Result:         Ready
+Result:         Ready + model metadata HTTP 200 (not only UI Ready)
 ```
 
-## F2. If the runtime wants a versioned folder
+## F2. Recovery only — if you already uploaded a flat `models/model.onnx`
+
+> Prefer fixing this at **E3** (upload to `models/muffin-chihuahua/1/model.onnx` from training).  
+> Use F2 only to repair an old export.
+
+> **Symptom validated on cluster:** deployment shows **Ready**, but **Model availability = No model availability**, and  
+> `GET /v2/models/muffin-chihuahua` returns `Model with requested version is not found`.  
+> **Root cause:** Path pointed at a single file `models/model.onnx`. OVMS needs a **version directory**.
+
+### 1) Put the ONNX in the OVMS layout on MinIO
+
+From your laptop (`mc` alias `lab`, add `--insecure` if needed):
 
 ```bash
 mc cp lab/muffin-chihuahua/models/model.onnx \
-  lab/muffin-chihuahua/models/muffin-chihuahua/1/model.onnx
-mc ls --recursive lab/muffin-chihuahua/models/
+  lab/muffin-chihuahua/models/muffin-chihuahua/1/model.onnx --insecure
+
+mc ls --recursive lab/muffin-chihuahua/models/ --insecure
 ```
 
-Point the UI at `models/muffin-chihuahua` if it asks for a model repository directory.
+Expected layout:
+
+```text
+models/
+├── model.onnx                          # original export from E3 (keep)
+└── muffin-chihuahua/
+    └── 1/
+        └── model.onnx                  # what OVMS loads as version "1"
+```
+
+### 2) Edit the deployment Path
+
+1. OpenShift AI → project → **Deployments** → `muffin-chihuahua` → **Edit**  
+2. Set **Path** = `models/muffin-chihuahua`  ← the **folder**, not `models/model.onnx`  
+3. Save → wait until **Ready** again  
+
+### 3) Confirm in the UI
+
+On the deployment details, **Model availability** must **no longer** say `No model availability`.
+
+### 4) Confirm from the Workbench (metadata)
+
+```python
+import warnings
+import requests
+
+warnings.filterwarnings("ignore", message="Unverified HTTPS request")
+
+EP = "https://muffin-chihuahua-chihuahua-vs-muffin-jan.apps.ocp.dv6rj.sandbox1011.opentlc.com"
+# Or internal:
+# EP = "http://muffin-chihuahua-predictor.chihuahua-vs-muffin-jan.svc.cluster.local:8080"
+
+r = requests.get(f"{EP}/v2/models/muffin-chihuahua", verify=False, timeout=15)
+print(r.status_code, r.text[:500])
+```
+
+**Validated successful response (HTTP 200):**
+
+```json
+{
+  "name": "muffin-chihuahua",
+  "versions": ["1"],
+  "platform": "OpenVINO",
+  "inputs": [{"name": "input", "datatype": "FP32", "shape": [1, 3, 224, 224]}],
+  "outputs": [{"name": "output", "datatype": "FP32", "shape": [1, 2]}]
+}
+```
+
+Then continue to **F3** for a real image `/infer` call.
 
 ## F3. Call the service from a Workbench (not Gen AI Playground)
 
@@ -1151,45 +1226,30 @@ label = CLASSES[pred] if conf >= 0.80 else "uncertain"
 print({"label": label, "confidence": conf, "probs": dict(zip(CLASSES, map(float, probs)))})
 ```
 
-### If you see `version is not found` / `name is not found` / `Invalid request URL`
+### If you see `version is not found` / `No model availability`
 
-Observed on this lab with path `models/model.onnx`:
+**Validated:** follow **F2** completely (`mc cp` → Path `models/muffin-chihuahua` → UI availability OK → Workbench metadata check).
+
+Quick re-check after F2 (Workbench):
+
+```python
+import warnings
+import requests
+warnings.filterwarnings("ignore", message="Unverified HTTPS request")
+EP = "https://muffin-chihuahua-chihuahua-vs-muffin-jan.apps.ocp.dv6rj.sandbox1011.opentlc.com"
+r = requests.get(f"{EP}/v2/models/muffin-chihuahua", verify=False, timeout=15)
+print(r.status_code, r.text[:500])
+# Expect HTTP 200 and JSON with "versions":["1"], inputs input [1,3,224,224], outputs output [1,2]
+```
+
+Other noise you may see before the fix:
 
 | Request | Typical response |
 |---------|------------------|
-| `GET /v2/models` | `Invalid request URL` (OVMS often has no list-all on this build) |
-| `GET /v2/models/model` | `Model with requested name is not found` |
-| `GET /v2/models/muffin-chihuahua` | `Model with requested version is not found` ← name OK, **version layout missing** |
-
-**Fix (recommended): versioned OVMS folder + redeploy**
-
-On the laptop (mc / port-forward):
-
-```bash
-mc cp lab/muffin-chihuahua/models/model.onnx \
-  lab/muffin-chihuahua/models/muffin-chihuahua/1/model.onnx --insecure
-mc ls --recursive lab/muffin-chihuahua/models/ --insecure
-```
-
-In OpenShift AI → Deployments → `muffin-chihuahua` → **Edit**:
-
-- **Path** = `models/muffin-chihuahua`  ← **folder**, not `models/model.onnx`
-- Keep name `muffin-chihuahua`, runtime OVMS, framework `onnx - 1`
-- Save → wait **Ready**
-
-Then test (notebook `%%bash` or terminal):
-
-```bash
-EP="https://muffin-chihuahua-chihuahua-vs-muffin-jan.apps.ocp.dv6rj.sandbox1011.opentlc.com"
-
-curl -sk "$EP/v2/models/muffin-chihuahua"
-echo
-curl -sk "$EP/v2/models/muffin-chihuahua/versions/1"
-echo
-curl -sk "$EP/v2/models/muffin-chihuahua/ready"
-```
-
-You want JSON metadata (inputs/outputs), not an `error` field.
+| `GET /v2/models` | `Invalid request URL` (OVMS often has no list-all) |
+| `GET /v2/models/model` | `name is not found` |
+| `GET /v2/models/muffin-chihuahua` (bad path) | `version is not found` |
+| UI **Model availability** | `No model availability` |
 
 Optional: check serving logs
 
@@ -1488,6 +1548,7 @@ Update live during the fil rouge:
 | TrustyAI pod missing | Admin must enable component + install service in the project |
 | TrustyAI errors with non-OVMS models | Serve with **OpenVINO Model Server** only |
 | No drift signal | Not enough inference traffic; TRAINING tag mismatch; wrong `modelId` |
+| Ready but **No model availability** / `version is not found` | Apply **F2**: `mc cp` → `…/muffin-chihuahua/1/model.onnx`, Path=`models/muffin-chihuahua`, then `/v2/models/muffin-chihuahua` → HTTP 200 with `versions:["1"]` |
 | `curl` exit status 7 to internal `*.svc.cluster.local` | DNS/connect failed from Workbench — check `oc get svc` for real `*-predictor` name/port; test with Python `requests` + `socket.getaddrinfo` |
 
 ```bash
@@ -1524,4 +1585,4 @@ oc -n chihuahua-vs-muffin logs -l app=trustyai --tail=100
 
 ---
 
-*Draft 0.12 — Aligned to OpenShift AI Self-Managed 3.5 docs. F1 serving wizard validated with screenshots. Red Hat documentation wins on conflicts.*
+*Draft 0.14 — E3 uploads ONNX directly to OVMS layout `models/muffin-chihuahua/1/model.onnx`; F2 kept as recovery only.*
