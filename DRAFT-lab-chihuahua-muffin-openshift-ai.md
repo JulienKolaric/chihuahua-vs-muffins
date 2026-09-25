@@ -1,6 +1,6 @@
 # Chihuahua vs Muffin — OpenShift AI Feature Thread
 
-**Version:** draft 0.8 — English, copy-paste friendly  
+**Version:** draft 0.10 — English, copy-paste friendly  
 **Mode:** Ongoing **fil rouge** (no fixed duration) — progress milestone by milestone, with regular team syncs  
 **Goal:** Exercise the main **OpenShift AI** capabilities on one concrete use case  
 **Use case:** An image service that answers: is this photo a **chihuahua** or a **muffin**?  
@@ -13,7 +13,7 @@
 > 3. At each team sync, fill the checkpoint table.  
 > 4. Do not rush — the point is to **see the platform features**, not to finish in one day.
 >
-> **Living document:** whenever a command, URL, or install step differs from reality during the fil rouge, **update this file immediately** so the next person is not blocked. Known fixes already folded in: macOS Kaggle venv (PEP 668), `mc` install options, OpenShift HTML errors on MinIO routes, Plan B ONNX is not shipped in the repo.
+> **Living document:** whenever a command, URL, or install step differs from reality during the fil rouge, **update this file immediately** so the next person is not blocked. Known fixes already folded in: macOS Kaggle venv (PEP 668), `mc` install options, OpenShift HTML errors on MinIO routes, Plan B ONNX is not shipped in the repo, Workbench needs `%pip install onnx` (same kernel) before `torch.onnx.export`.
 
 ---
 
@@ -583,9 +583,35 @@ Open a notebook or terminal inside Jupyter.
 
 ## D1. Install helpers (once)
 
-```bash
-pip install boto3 pillow matplotlib
+**In a notebook cell**, use `%pip` so packages go into **this kernel** (plain `pip` in a terminal can install elsewhere → `ModuleNotFoundError` in the notebook):
+
+```python
+%pip install boto3 pillow matplotlib onnx
 ```
+
+Then **Kernel → Restart**, and re-run your cells from the top (or at least re-create `model` / `DEVICE` before E3).
+
+Verify:
+
+```python
+import sys
+import onnx
+print("python:", sys.executable)
+print("onnx:", onnx.__version__)
+```
+
+> **Required for Part E3:** PyTorch’s `torch.onnx.export(...)` needs the Python package **`onnx`**.  
+> Without it you get: `OnnxExporterError: Module onnx is not installed!` / `ModuleNotFoundError: No module named 'onnx'`.  
+> The DeprecationWarning about TorchScript vs `torch.export` is OK for this lab — ignore it for now.
+
+**If `%pip` is blocked**, use a Workbench **terminal** with the same Python as the notebook:
+
+```bash
+which python
+python -m pip install boto3 pillow matplotlib onnx
+```
+
+Then restart the kernel.
 
 ## D2. List files in the bucket (copy-paste)
 
@@ -776,25 +802,48 @@ Do not confuse this path with a generic ImageNet ResNet18 ONNX (1000 classes) �
 
 ## E3. Export ONNX and upload to S3
 
+If you skipped D1 or hit `Module onnx is not installed` / `No module named 'onnx'`, run this **in a notebook cell** first:
+
+```python
+%pip install onnx
+```
+
+Then **Kernel → Restart**, re-run training cells so `model` exists again, then continue.
+
+Quick check before export:
+
+```python
+import sys, onnx
+print(sys.executable, onnx.__version__)
+```
+
 ```python
 import torch
 import boto3
 import os
 from pathlib import Path
 
+# Optional: silence is fine; DeprecationWarning about legacy ONNX export is expected on newer PyTorch
 model.eval()
 dummy = torch.randn(1, 3, 224, 224, device=DEVICE)
 onnx_path = Path("/opt/app-root/src/models/model.onnx")
+onnx_path.parent.mkdir(parents=True, exist_ok=True)
+
+# Keep model + dummy on the same device for export
+export_model = model.to("cpu")
+export_model.eval()
+dummy_cpu = torch.randn(1, 3, 224, 224)
 
 torch.onnx.export(
-    model.cpu() if DEVICE == "cpu" else model,
-    dummy.cpu() if DEVICE == "cpu" else dummy,
+    export_model,
+    dummy_cpu,
     str(onnx_path),
     input_names=["input"],
     output_names=["output"],
-    dynamo=False,  # remove if unsupported on older torch
+    dynamo=False,  # legacy exporter; OK for this lab
 )
 print("ONNX written:", onnx_path)
+print("Size (MB):", round(onnx_path.stat().st_size / 1e6, 2))
 
 # Upload
 endpoint = os.environ.get("AWS_S3_ENDPOINT", "http://minio.lab-minio.svc.cluster.local:9000")
@@ -1143,6 +1192,9 @@ Update live during the fil rouge:
 | `kaggle: command not found` | Activate the venv: `source ~/lab-venv/bin/activate` |
 | Kaggle download / auth fails | Check `~/.kaggle/kaggle.json` exists and `chmod 600 ~/.kaggle/kaggle.json` |
 | Where is `model.onnx`? | Not in the repo — produce it in M3, or use Plan B after one teammate exports it |
+| `OnnxExporterError: Module onnx is not installed!` | In a **notebook** cell: `%pip install onnx` → Kernel Restart → re-run cells |
+| `ModuleNotFoundError: No module named 'onnx'` after pip | You installed into another Python. Use `%pip install onnx` (not bare `pip`) and restart kernel |
+| DeprecationWarning about legacy TorchScript ONNX export | Safe to ignore for this lab (`dynamo=False` is intentional) |
 | Training very slow | Use subset; fewer epochs; Plan B ONNX (team-produced) |
 | Model never Ready | Wrong ONNX path; runtime wants a folder; check serving pod logs |
 | TrustyAI pod missing | Admin must enable component + install service in the project |
@@ -1171,4 +1223,4 @@ oc -n chihuahua-vs-muffin logs -l app=trustyai --tail=100
 
 ---
 
-*Draft 0.8 — Living OpenShift AI feature thread. Update this file whenever reality differs from the written steps.*
+*Draft 0.10 — Living OpenShift AI feature thread. Update this file whenever reality differs from the written steps.*
