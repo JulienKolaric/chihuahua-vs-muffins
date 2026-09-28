@@ -1,15 +1,15 @@
 # Chihuahua vs Muffin — OpenShift AI Feature Thread
 
-**Version:** draft 0.14 — English, copy-paste friendly  
+**Version:** draft 0.15 — English, copy-paste friendly  
 **OpenShift AI version:** **Self-Managed 3.5** (source of truth for all platform steps)  
 **Mode:** Ongoing **fil rouge** (no fixed duration) — progress milestone by milestone, with regular team syncs  
 **Goal:** Exercise the main **OpenShift AI** capabilities on one concrete use case  
 **Use case:** An image service that answers: is this photo a **chihuahua** or a **muffin**?  
 **Audience:** Mixed team (beginners welcome) exploring the platform together  
-**Team setup (4 people):** **one shared OpenShift AI cluster**, **one shared Data Science Project**, **one Workbench per person**, shared MinIO + one served predictive model / OVMS (+ TrustyAI later)
+**Team setup (4 people):** **one shared OpenShift AI cluster**, **one shared Data Science Project**, **one Workbench per person**, shared MinIO + predictive OVMS model + later: pipelines, AutoML (tabular), Gen AI playground
 
 > **How to use this doc**  
-> 1. Pick the next **Milestone** (M0 → M7).  
+> 1. Pick the next **Milestone** (M0 → M9).  
 > 2. Copy-paste the commands. Change only values marked `<LIKE_THIS>`.  
 > 3. At each team sync, fill the checkpoint table.  
 > 4. Do not rush — the point is to **see the platform features**, not to finish in one day.
@@ -30,12 +30,16 @@ We build a small **predictive model** and deploy it on the OpenShift AI **single
 2. The team trains a classifier in a **Workbench**  
 3. The model is versioned in the **Model registry** (optional) and **deployed** as an inference endpoint  
 4. Anyone (or any app) can call that API  
-5. **TrustyAI** watches for **data drift** when people send weird photos (owls, cookies, screenshots…)
+5. **TrustyAI** watches for **data drift** when people send weird photos (owls, cookies, screenshots…)  
+6. **AI Pipelines** automate train → ONNX → S3  
+7. **AutoML** is tested on a **separate tabular CSV** (AutoML is not for CNN images)  
+8. **Gen AI playground** runs a fun LLM use case: **“Muffin Court”** (humorous judge for muffin vs chihuahua)
 
-Same business pattern as a real project: *data → train → register → serve → monitor*.
+Same business pattern as a real project: *data → train → register → serve → monitor → automate → experiment with gen AI*.
 
 > In OpenShift AI **3.5**, the product guide **“Models-as-a-Service”** is mainly about **governing LLM access**.  
-> Our Chihuahua/Muffin case is a **predictive** model → use **Deploy predictive models using single model serving platform**.
+> Our Chihuahua/Muffin **classifier** is a **predictive** model → single-model serving + OVMS.  
+> Our **Muffin Court** bot is a **generative** model → Deploy as Generative AI + **Add as AI asset endpoint** + Gen AI studio Playground.
 
 We are **not** chasing Kaggle leaderboard scores.  
 We are **showcasing OpenShift AI 3.5**.
@@ -53,11 +57,13 @@ We are **showcasing OpenShift AI 3.5**.
 | **M4** | **Single-model serving** (OVMS / KServe) | Predictive model exposed as an HTTP API |
 | **M5** | **Model registry** (optional but recommended) | Versions of the model, not “a file on disk” |
 | **M6** | **TrustyAI** (Monitor AI systems) | Detect when live inputs leave the training world |
-| **M7** | **AI pipelines** (optional) | Repeatable train → evaluate → publish flow |
+| **M7** | **AI pipelines** + **pipeline server** | Configure server; automate train → ONNX → S3 |
+| **M8** | **AutoML** (tabular demo) | Platform AutoML works on CSV — not on muffin images |
+| **M9** | **Gen AI playground** — **Muffin Court** | Fun generative use case + AI asset endpoint |
 
 Related controls you will also touch:
 
-- Client **confidence threshold** (reject low-confidence answers)  
+- Client **confidence threshold** / margin (reject tea cups labeled as chihuahua)  
 - Optional **token auth** on the inference endpoint  
 - Team **checkpoint reviews** (what worked / blocked)
 
@@ -70,7 +76,9 @@ Related controls you will also touch:
 - AI pipelines: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/working_with_ai_pipelines/managing-ai-pipelines_ai-pipelines  
 - TrustyAI configure: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/monitoring_your_ai_systems/configuring-trustyai_monitor  
 - TrustyAI project setup: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/monitoring_your_ai_systems/setting-up-trustyai-for-your-project_monitor  
-- TrustyAI data drift: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/monitoring_your_ai_systems/monitoring-data-drift_drift-monitoring
+- TrustyAI data drift: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/monitoring_your_ai_systems/monitoring-data-drift_drift-monitoring  
+- Gen AI playground: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/experimenting_with_models_in_the_gen_ai_playground/index  
+- AutoML (see Working with AutoML on docs.redhat.com for your cluster version)
 
 ---
 
@@ -91,7 +99,11 @@ Related controls you will also touch:
 | **Model registry** | Catalog of model versions |
 | **TrustyAI** | Monitoring (drift, bias, …) — OVMS models only |
 | **AI pipelines** | Automated multi-step ML workflows (KFP) |
-| **Endpoint / API** | The inference URL you call with an image |
+| **Pipeline server** | Per-project service that runs pipeline definitions and stores artifacts in S3 |
+| **AutoML** | Automated training on **tabular CSV** / time series (AutoGluon) — not image CNNs |
+| **Gen AI playground** | Chat UI (Tech Preview) to try generative models marked as AI asset endpoints |
+| **AI asset endpoint** | Flag on a **generative** deployment so it appears in Gen AI studio |
+| **Endpoint / API** | The inference URL you call with an image or a chat completion |
 
 ---
 
@@ -1484,28 +1496,155 @@ trustyai_meanshift
 
 ---
 
-# PART I — Milestone M7: AI pipelines (optional)
+# PART I — Milestone M7: Pipeline server + AI pipelines
 
 Official ref (3.5):  
 [Managing AI pipelines](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/working_with_ai_pipelines/managing-ai-pipelines_ai-pipelines)
 
-When M3–M6 work manually, automate the happy path.
+## I1. Configure the pipeline server (required before AutoML)
 
-Typical pipeline steps:
+1. Open project (example: `chihuahua-vs-muffin-jan`)  
+2. Tab **Pipelines** → **Configure pipeline server**  
+3. Object storage (reuse MinIO):
+
+| Field | Lab value |
+|-------|-----------|
+| Access key | `minio` |
+| Secret key | `minio123` |
+| Endpoint | `http://minio.lab-minio.svc.cluster.local:9000` |
+| Region | `us-east-1` |
+| Bucket | `muffin-chihuahua` (or a dedicated `pipelines` bucket) |
+
+4. Database: **Default database on the cluster** (lab/test only; use external DB in production)  
+5. Wait until the pipeline server is **Ready**
+
+```bash
+oc -n chihuahua-vs-muffin-jan get pods | grep -i pipeline
+```
+
+## I2. Smoke test
+
+1. **Import pipeline** (any small KFP YAML / sample)  
+2. **Create run** → status **Succeeded**  
+3. Confirm artifacts appear under the S3 bucket (`/pipelines/...`)
+
+## I3. Fil rouge pipeline (optional next)
+
+Automate the predictive path:
 
 1. Pull dataset from S3  
 2. Train + evaluate  
-3. If accuracy &gt; threshold → export ONNX  
-4. Upload to S3 / register new Model registry version  
-5. (Optional) trigger redeploy
-
-**UI path (3.5):** project → **Pipelines** → configure pipeline server (S3 connection) → import / run pipeline.
+3. If accuracy OK → export ONNX to `models/muffin-chihuahua/1/model.onnx`  
+4. (Optional) register / notify for redeploy  
 
 **Sync question:** Can we retrain without re-running every notebook cell by hand?
 
 ---
 
-# PART J — Global feature checklist
+# PART J — Milestone M8: AutoML (tabular demo — not images)
+
+> **Important:** OpenShift AI **AutoML** trains on **CSV tabular** (or time series) data via AutoGluon.  
+> It will **not** replace your ResNet muffin/chihuahua image model.  
+> Use M8 to **exercise the AutoML feature** of the platform with a tiny CSV.
+
+Official refs: Working with AutoML on [docs.redhat.com](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5) (version may list AutoML under Develop).  
+Examples: https://github.com/red-hat-data-services/red-hat-ai-examples/blob/main/examples/automl/readme.md
+
+## J1. Prerequisites
+
+- [ ] Pipeline server Ready (Part I)  
+- [ ] ~4 CPU / 16 GiB free for a run (per AutoML docs)  
+- [ ] AutoML pipeline definitions imported if required by your cluster (`autogluon-tabular-training-pipeline`, …)  
+- [ ] A small UTF-8 CSV with header on S3 (max ~32 MiB via dashboard upload)
+
+Example columns: `feature1,feature2,feature3,label` with binary `label`.
+
+## J2. Create an optimization run
+
+1. Open **AutoML** (or create a run from the imported AutoML pipeline)  
+2. Select S3 connection + CSV file  
+3. Task: **Binary classification**  
+4. Target column = your label  
+5. **Create run** → wait for Completed / leaderboard  
+
+**Success for M8:** AutoML run finishes and you can explain to the team: *“AutoML = tabular automation; our vision model stays the custom OVMS service.”*
+
+---
+
+# PART K — Milestone M9: Gen AI — fun use case **“Muffin Court”**
+
+### The idea (basic + fun)
+
+Keep the predictive model as the “expert witness”.  
+Add a **generative** chat model as **Judge Muffin Court**:
+
+> You paste a short description (or the predictive label + confidence).  
+> The LLM answers in a **funny courtroom style**:  
+> *“Your Honor, the ears appear to be paper cups… I rule MUFFIN.”*  
+> For a tea cup misclassified as chihuahua: *“Objection! This evidence is clearly ceramic. Human review required.”*
+
+This lets you demo:
+
+1. **Predictive** serving (OVMS) — already done  
+2. **Generative** serving + **Gen AI playground** (3.5 Tech Preview)  
+3. Optional: client confidence guardrail + witty LLM explanation
+
+Official refs:  
+[Gen AI playground](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/experimenting_with_models_in_the_gen_ai_playground/index) ·  
+[Deploying models](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/deploying_models/deploying_models) ·  
+[Configure a playground](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/experimenting_with_models_in_the_gen_ai_playground/configuring-a-playground-for-your-project_rhoai-user)
+
+## K1. Prerequisites
+
+- [ ] GPU (or a tiny CPU-capable generative runtime if your cluster provides one)  
+- [ ] Model available from **Model catalog** / OCI / validated gen AI image on your cluster  
+- [ ] Gen AI studio / playground enabled (cluster admin; feature is **Technology Preview** in 3.5)
+
+Pick the **smallest** instruct model your catalog offers that fits quotas (ask admin which validated model to use).
+
+## K2. Deploy as Generative AI + AI asset endpoint
+
+1. Project → **Deployments** → **Deploy model**  
+2. **Model type:** **Generative AI model** (not Predictive)  
+3. Location: catalog / OCI / connection as required by your cluster  
+4. Serving runtime: typically **vLLM** (or the runtime recommended for that model)  
+5. Advanced settings:  
+   - ✅ **Add as AI asset endpoint** (required for playground)  
+   - Use case: e.g. `chat`  
+   - External route / token auth as needed  
+6. Wait **Ready**
+
+## K3. Create the playground
+
+1. **Gen AI studio** → **Playground** (or **AI asset endpoints** → **Add to playground**)  
+2. Select project + your generative model (Type: **Inference**)  
+3. **Create** → wait for chat UI  
+
+## K4. System prompt (paste in Playground Prompt / settings)
+
+```text
+You are Judge Muffin Court, a humorous courtroom AI.
+The only animals/foods you debate are Chihuahuas and blueberry muffins.
+Given a short description or a predictive model output (label + confidence),
+reply in 3-6 funny sentences as a courtroom verdict.
+If the input is clearly neither (tea cup, cat, car), rule "OUT OF ORDER / HUMAN REVIEW"
+and do not force muffin or chihuahua.
+Stay playful, never offensive, keep it PG.
+```
+
+## K5. Demo script for the team sync
+
+1. Show predictive API on a muffin photo → `muffin 97%`  
+2. Paste into playground: `Predictive model says muffin with 97% confidence. Image looks fluffy with paper wrapper.`  
+3. Show Judge verdict  
+4. Show tea cup case: predictive might say `chihuahua`; with confidence guardrail → `uncertain`; Judge says **OUT OF ORDER**  
+5. Explain: **two features** — predictive OVMS vs generative playground  
+
+**Success for M9:** chat works in Gen AI playground with the Muffin Court prompt; team understands predictive ≠ generative paths in OpenShift AI 3.5.
+
+---
+
+# PART L — Global feature checklist
 
 Update live during the fil rouge:
 
@@ -1514,15 +1653,19 @@ Update live during the fil rouge:
 | Project | M2 | | |
 | Workbench (PyTorch) | M2 | | |
 | Connection (S3) | M1–M2 | | |
-| Train + ONNX export | M3 | | |
+| Train + ONNX export (OVMS layout) | M3 | | |
 | Single-model serving (OVMS) | M4 | | |
 | Auth token on endpoint | M4 | | |
-| Confidence guardrail | M4 | | |
+| Confidence / margin guardrail | M4 | | |
 | Model Registry | M5 | | |
 | TrustyAI service in project | M6 | | |
 | TrustyAI TRAINING baseline | M6 | | |
 | Drift metric + Observe graph | M6 | | |
-| Pipelines | M7 | | |
+| Pipeline server configured | M7 | | |
+| Pipeline run Succeeded | M7 | | |
+| AutoML tabular run | M8 | | |
+| Generative model deployed + AI asset | M9 | | |
+| Gen AI playground (Muffin Court) | M9 | | |
 
 ---
 
@@ -1575,6 +1718,8 @@ oc -n chihuahua-vs-muffin logs -l app=trustyai --tail=100
 - TrustyAI configure: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/monitoring_your_ai_systems/configuring-trustyai_monitor  
 - TrustyAI project setup: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/monitoring_your_ai_systems/setting-up-trustyai-for-your-project_monitor  
 - TrustyAI data drift: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/monitoring_your_ai_systems/monitoring-data-drift_drift-monitoring  
+- Gen AI playground: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/experimenting_with_models_in_the_gen_ai_playground/index  
+- AutoML (see Working with AutoML on docs.redhat.com for your cluster version)  
 
 ## Dataset / extras (not Red Hat)
 
@@ -1585,4 +1730,4 @@ oc -n chihuahua-vs-muffin logs -l app=trustyai --tail=100
 
 ---
 
-*Draft 0.14 — E3 uploads ONNX directly to OVMS layout `models/muffin-chihuahua/1/model.onnx`; F2 kept as recovery only.*
+*Draft 0.15 — Added M7 pipeline server, M8 AutoML (tabular), M9 Gen AI Muffin Court playground. Red Hat 3.5 docs win on conflicts.*
