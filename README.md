@@ -23,7 +23,7 @@ Lab on **OpenShift AI 3.5**: S3 → train → serve → guardrails → TrustyAI 
 | 6 | [Call the API](#step-6) | ✅ |
 | 7 | [Guardrails (confidence / margin)](#step-7) | ✅ |
 | 8 | [TrustyAI](#step-8) | ✅ |
-| 9 | [Pipelines](#step-9) | ⬜ |
+| 9 | [Pipelines](#step-9) | ✅ |
 | 10 | AutoML | ⬜ |
 | 11 | Gen AI — Muffin Court | ⬜ |
 
@@ -803,11 +803,61 @@ Pods related to `ds-pipeline` / `mariadb` (or equivalent) should be **Running**.
 
 ## 9.2 Smoke run (after server is Ready)
 
-1. **Pipelines** → **Import pipeline** (YAML or sample from the UI).
-2. **Create run** → wait until status **Succeeded**.
-3. Optional: check MinIO for pipeline artifact prefixes under the bucket.
+### What this pipeline does (plain language)
 
-*(We freeze exact import YAML / screenshot notes here once the first Succeeded run is validated on this cluster.)*
+[`lab-smoke-hello`](pipelines/lab_smoke_hello.yaml) is a **hello-world** for the platform — not training, not OVMS, not TrustyAI.
+
+| | |
+|--|--|
+| Goal | Prove the pipeline server can **schedule a pod**, **run one task**, and land on **Succeeded** |
+| Graph | One step: **`say-hello`** |
+| What the step does | Starts a small Python container (UBI9), prints `hello <name> from chihuahua-vs-muffin lab`, returns that string |
+| Parameter | `name` (default **`muffin`**) — only changes the printed text |
+| Source | Python DSL [`pipelines/smoke_hello.py`](pipelines/smoke_hello.py) → compiled IR YAML [`pipelines/lab_smoke_hello.yaml`](pipelines/lab_smoke_hello.yaml) |
+
+If this run succeeds, pipelines work on the cluster. The muffin fil rouge (S3 → train → ONNX) can come later as an optional follow-on.
+
+### Import
+
+You need a **compiled KFP YAML** (not a raw `.py`). Lab file: [`pipelines/lab_smoke_hello.yaml`](pipelines/lab_smoke_hello.yaml).
+
+**In the Import pipeline dialog:**
+
+1. **Pipeline name:** `lab-smoke-hello`
+2. **Description (optional):** `Step 9 smoke — one print task`
+3. Keep **Upload a file**
+4. **Upload** → choose `pipelines/lab_smoke_hello.yaml` from the repo
+5. Click **Import pipeline**
+
+### Create run
+
+1. Pipeline page → **Actions** → **Create run**
+2. **Run type:** run once immediately
+3. **Run details:**
+   - **Name:** `smoke-1` (any unique name)
+   - **Description:** empty OK
+   - **Run group:** `Default`
+4. **Pipeline:** `lab-smoke-hello`
+5. **Parameters:** leave `name = muffin` (or change it to see a different log line)
+6. **Create run** → wait until status **Succeeded**
+7. Open the run → task **`say-hello`** → logs should show:
+   `hello muffin from chihuahua-vs-muffin lab`
+
+### Validated on this lab
+
+| | |
+|--|--|
+| Pipeline | `lab-smoke-hello` |
+| Run | `smoke-1` · One-off · **Complete** |
+| Graph | single task `say-hello` (green check) |
+
+![smoke-1 Complete — say-hello succeeded](docs/screenshots/step9-smoke-1-complete.png)
+
+To regenerate the YAML locally:
+```bash
+python3 -m venv .venv-kfp && .venv-kfp/bin/pip install 'kfp>=2.7,<3'
+.venv-kfp/bin/python pipelines/smoke_hello.py
+```
 
 ## 9.3 Out of scope for the first pass
 
