@@ -21,7 +21,7 @@ Lab on **OpenShift AI 3.5**: S3 → train → serve → guardrails → TrustyAI 
 | 4 | Train + ONNX | ✅ |
 | 5 | Deploy model (OVMS) | ✅ |
 | 6 | Call the API | ✅ |
-| 7 | Guardrails | ⬜ |
+| 7 | Guardrails (confidence / margin) | ✅ |
 | 8 | TrustyAI | ⬜ |
 | 9 | Pipelines | ⬜ |
 | 10 | AutoML | ⬜ |
@@ -377,9 +377,51 @@ curl -sS "http://muffin-chihuahua-predictor.chihuahua-vs-muffin-jan.svc.cluster.
 
 ---
 
-# Step 7 — Guardrails
+# Step 7 — Confidence thresholds (before TrustyAI)
 
-*Next — confidence / margin so uncertain images are not forced into a class.*
+A 2-class model **always** returns `chihuahua` or `muffin`.  
+Out-of-domain photos (tea cup, cat, car…) still get a label — that is expected.
+
+**Client-side guardrail** (notebook / app), not a change to OVMS:
+
+1. `confidence = max(prob)` must be ≥ `CONF_MIN` (default **0.80**)
+2. `margin = top1 − top2` must be ≥ `MARGIN_MIN` (default **0.25**)
+3. Otherwise → `uncertain` (do not trust the raw class)
+
+Notebook: [`notebooks/07_confidence_guardrails.ipynb`](notebooks/07_confidence_guardrails.ipynb)
+
+| Test | What to do | Expect |
+|------|------------|--------|
+| In-domain | sample from `test/muffin` + `test/chihuahua` | mostly **ACCEPTED** |
+| Out-of-domain | upload photos to `/opt/app-root/src/ood/` (lab samples in repo [`ood/`](ood/)) | mostly **UNCERTAIN** (tea cup); edge dogs may still score high |
+
+
+If OOD images are still accepted → raise `CONF_MIN` / `MARGIN_MIN` in the notebook and re-run.
+
+### Validated defaults
+
+| | |
+|--|--|
+| `CONF_MIN` | `0.80` |
+| `MARGIN_MIN` | `0.25` |
+| Lab OOD samples | [`ood/teacup.jpg`](ood/teacup.jpg), [`ood/hairless_dog.jpg`](ood/hairless_dog.jpg), [`ood/chihuahua_back.jpg`](ood/chihuahua_back.jpg) |
+| Workbench path | `/opt/app-root/src/ood/` |
+
+---
+
+# Step 8 — TrustyAI / platform guardrails
+
+OpenShift AI has **two different ideas** often both called “guardrails”:
+
+| | Client confidence (Step 7) | TrustyAI (this step) |
+|--|---------------------------|----------------------|
+| Where | Your notebook / app | Platform service in the project |
+| What | Reject low-confidence predictions | Capture inference payloads, drift, (LLM) guardrails operators |
+| Model type | Any predictive API | Drift metrics: **OVMS** models |
+
+We continue with **TrustyAI** for the predictive muffin/chihuahua service.
+
+*Run the inventory paste in chat next.*
 
 ---
 
