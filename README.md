@@ -14,20 +14,25 @@ Lab on **OpenShift AI 3.5**: S3 → train → serve → guardrails → TrustyAI 
 
 | Step | Topic | Done |
 |------|--------|------|
-| 0 | Prerequisites | ✅ |
-| 1 | MinIO + bucket | ✅ |
-| 2 | Dataset on S3 | ✅ |
-| 3 | Project + connection + Workbench | ✅ |
-| 4 | Train + ONNX | ✅ |
-| 5 | Deploy model (OVMS) | ✅ |
-| 6 | Call the API | ✅ |
-| 7 | Guardrails (confidence / margin) | ✅ |
-| 8 | TrustyAI | ✅ |
-| 9 | Pipelines | ⬜ |
+| 0 | [Prerequisites](#step-0) | ✅ |
+| 1 | [MinIO + bucket](#step-1) | ✅ |
+| 2 | [Dataset on S3](#step-2) | ✅ |
+| 3 | [Project + connection + Workbench](#step-3) | ✅ |
+| 4 | [Train + ONNX](#step-4) | ✅ |
+| 5 | [Deploy model (OVMS)](#step-5) | ✅ |
+| 6 | [Call the API](#step-6) | ✅ |
+| 7 | [Guardrails (confidence / margin)](#step-7) | ✅ |
+| 8 | [TrustyAI](#step-8) | ✅ |
+| 9 | [Pipelines](#step-9) | ⬜ |
 | 10 | AutoML | ⬜ |
 | 11 | Gen AI — Muffin Court | ⬜ |
 
+Jump: [0](#step-0) · [1](#step-1) · [2](#step-2) · [3](#step-3) · [4](#step-4) · [5](#step-5) · [6](#step-6) · [7](#step-7) · [8](#step-8) · [9](#step-9)  
+Step 8: [8.1](#81-install) · [8.2](#82-names) · [8.3](#83-training) · [8.4](#84-read) · [8.5](#85-observe) · [8.6](#86-flood) · [8.7](#87-reset)
+
 ---
+
+<a id="step-0"></a>
 
 # Step 0 — Prerequisites
 
@@ -46,6 +51,8 @@ oc api-resources | grep -i trustyai | head
 | DSC | `default-dsc` Ready |
 
 ---
+
+<a id="step-1"></a>
 
 # Step 1 — MinIO + bucket
 
@@ -139,6 +146,8 @@ mc mb lab/"$BUCKET" --insecure
 
 ---
 
+<a id="step-2"></a>
+
 # Step 2 — Dataset on S3
 
 Source: [Muffin vs Chihuahua (Kaggle, CC0)](https://www.kaggle.com/datasets/samuelcortinhas/muffin-vs-chihuahua-image-classification)
@@ -173,6 +182,8 @@ mc mirror --overwrite "$SUBSET" lab/muffin-chihuahua/ --insecure
 Layout on S3: `train|test` / `chihuahua|muffin` — **500** train + **100** test images per class.
 
 ---
+
+<a id="step-3"></a>
 
 # Step 3 — Project + connection + Workbench
 
@@ -256,6 +267,8 @@ EOF
 
 ---
 
+<a id="step-4"></a>
+
 # Step 4 — Train + ONNX
 
 Notebook scripts (English comments): [`notebooks/`](notebooks/)
@@ -273,6 +286,8 @@ Notebook scripts (English comments): [`notebooks/`](notebooks/)
 ONNX on S3 (OVMS layout): `s3://muffin-chihuahua/models/muffin-chihuahua/1/model.onnx`
 
 ---
+
+<a id="step-5"></a>
 
 # Step 5 — Deploy model (OVMS)
 
@@ -327,6 +342,8 @@ Deploy → wait until status **Ready**.
 
 ---
 
+<a id="step-6"></a>
+
 # Step 6 — Call the API
 
 Notebook: [`notebooks/06_infer.ipynb`](notebooks/06_infer.ipynb)
@@ -377,6 +394,8 @@ curl -sS "http://muffin-chihuahua-predictor.chihuahua-vs-muffin-jan.svc.cluster.
 
 ---
 
+<a id="step-7"></a>
+
 # Step 7 — Confidence thresholds (before TrustyAI)
 
 A 2-class model **always** returns `chihuahua` or `muffin`.  
@@ -408,6 +427,8 @@ If OOD images are still accepted → raise `CONF_MIN` / `MARGIN_MIN` in the note
 | Workbench path | `/opt/app-root/src/ood/` |
 
 ---
+
+<a id="step-8"></a>
 
 # Step 8 — TrustyAI (platform monitoring)
 
@@ -458,14 +479,16 @@ Official docs (3.5):
 
 ## What we will do (checklist)
 
-1. Install **TrustyAIService** + CA ConfigMap
+1. [Install **TrustyAIService** + CA ConfigMap](#81-install)
 2. Enable InferenceService logger + fix RawDeployment TLS
 3. Prove capture: `/info` shows `muffin-chihuahua` with `observations ≥ 1`
-4. **Name mapping** (setup): `output-0`→`chihuahua`, `output-1`→`muffin` via `/info/names`
-5. Send a **TRAINING** baseline (`TRAINING: 4` via `/data/upload`)
-6. Schedule **MeanShift** (`metricCounts.MEANSHIFT: 1`)
-7. Watch drift in Observe (`trustyai_meanshift`) + flood neg / pos
-8. *(Facilitator)* Reset with [`scripts/trustyai_reset.sh`](scripts/trustyai_reset.sh) before the next team replay — see §8.7
+4. [**Name mapping**](#82-names): `output-0`→`chihuahua`, `output-1`→`muffin`
+5. [Send a **TRAINING** baseline](#83-training) (`TRAINING: 4` via `/data/upload`)
+6. [Schedule **MeanShift**](#83-training)
+7. [Watch drift in Observe](#85-observe) + [flood neg / pos](#86-flood)
+8. *(Facilitator)* [Reset](#87-reset) with [`scripts/trustyai_reset.sh`](scripts/trustyai_reset.sh) before the next team replay
+
+<a id="81-install"></a>
 
 ## 8.1 Install TrustyAI + CA bundle (validated)
 
@@ -530,6 +553,8 @@ Add CA + `tlsSkipVerify` to the cluster KServe ConfigMap (`redhat-ods-applicatio
 3. Do not rely on HTTP logger URL alone — operator rewrites to HTTPS; fix TLS via `inferenceservice-config`.
 4. Workbench → TrustyAI `/data/upload` can **timeout** on huge image tensors. Build JSON on the workbench, upload via **`oc exec` into the TrustyAI pod** (`curl http://127.0.0.1:8080/data/upload`). Script: [`scripts/trustyai_training_upload.py`](scripts/trustyai_training_upload.py).
 
+<a id="82-names"></a>
+
 ## 8.2 Name mapping — part of setup (not a later fix)
 
 As soon as `/info` shows the model schema (after the **first** captured `/infer`), apply human-readable names. Training / ImageFolder order is `['chihuahua', 'muffin']`:
@@ -574,6 +599,8 @@ curl -sk -H "Authorization: Bearer $TOKEN" -X POST \
 
 Prerequisite: at least one observation already in TrustyAI (schema must exist).
 
+<a id="83-training"></a>
+
 ## 8.3 TRAINING baseline + MeanShift (validated)
 
 | | |
@@ -609,6 +636,8 @@ curl -sk -H "Authorization: Bearer $TOKEN" -X POST \
   -d '{"modelId":"muffin-chihuahua","referenceTag":"TRAINING"}'
 ```
 
+<a id="84-read"></a>
+
 ## 8.4 How to read `trustyai_meanshift` (plain language)
 
 **MeanShift = “how much does live traffic still look like TRAINING?”**
@@ -636,6 +665,8 @@ Validated demo numbers on this lab:
 Still above 0.05 (not a hard alarm), but the curve **moves down** = TrustyAI sees the world changing.
 
 **Sync one-liner:** *We put a camera on the model. TRAINING is normal. MeanShift compares. Lower = inputs left the training world.*
+
+<a id="85-observe"></a>
 
 ## 8.5 See it in the OpenShift console (validated)
 
@@ -672,6 +703,8 @@ In the UI:
    Time range **15m**, Refresh **15s** · **Run queries**.
 5. Wait 1–2 minutes after traffic for the curve to move.
 
+<a id="86-flood"></a>
+
 ## 8.6 Demo loop (workbench notebook)
 
 **Run in the workbench:** [`notebooks/09_trustyai_flood.ipynb`](notebooks/09_trustyai_flood.ipynb)
@@ -695,6 +728,8 @@ Run one cell, wait ~1–2 min, then the next. Keep volumes small (`repeats=2`, ~
 
 Optional CLI equivalents: `scripts/trustyai_ood_flood.py` / `scripts/trustyai_good_flood.py`.
 
+<a id="87-reset"></a>
+
 ## 8.7 Reset TrustyAI (replay for the next team)
 
 Keeps the platform pieces (TrustyAIService, CA, logger). Clears **stored inferences**, **TRAINING tags**, and **MeanShift jobs** so colleagues can redo §8.2 → §8.6 from an empty `/info`.
@@ -715,6 +750,8 @@ What the script does:
 Then follow the checklist again from the first captured `/infer`. Do **not** delete the TrustyAI PVC unless storage is corrupted — file wipe is enough.
 
 ---
+
+<a id="step-9"></a>
 
 # Step 9 — Pipelines
 
