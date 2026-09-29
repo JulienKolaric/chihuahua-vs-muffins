@@ -699,12 +699,33 @@ In the UI:
 1. Perspective **Developer** (not Administrator).
 2. Project **`chihuahua-vs-muffin-jan`**.
 3. **Observe → Metrics**.
+
+![Observe → Metrics — start here (empty query)](docs/screenshots/step8-observe-empty-query.png)
+
 4. Expression (use **your** MeanShift `requestId` from §8.3, or all series):
    ```promql
    trustyai_meanshift{model="muffin-chihuahua"}
    ```
    Time range **15m**, Refresh **15s** · **Run queries**.
 5. Wait 1–2 minutes after traffic for the curve to move.
+
+### What you may see (validated screenshots)
+
+**No datapoints** — user-workload monitoring / ServiceMonitor not ready yet (fix with §8.5 enable above):
+
+![No datapoints found for trustyai_meanshift](docs/screenshots/step8-observe-no-datapoints.png)
+
+**First healthy scrape** — curves appear (may still show raw `output-0` / `output-1` if names were applied late):
+
+![MeanShift first datapoints](docs/screenshots/step8-observe-meanshift-first.png)
+
+**Too many series** — old MeanShift jobs + mixed `output-*` and named labels. Clean: delete old requests (§8.7 / delete MeanShift jobs) and filter one `request=`:
+
+![Too many MeanShift series — clean up](docs/screenshots/step8-observe-too-many-series.png)
+
+**After name mapping** — series labeled `chihuahua` / `muffin`:
+
+![Named chihuahua / muffin MeanShift series](docs/screenshots/step8-observe-named-series.png)
 
 <a id="86-flood"></a>
 
@@ -730,6 +751,20 @@ Two floods only — enough for the drift story:
 Run one cell, wait ~1–2 min, then the next. Keep volumes small (`repeats=2`, ~2 MiB per image in TrustyAI).
 
 Optional CLI equivalents: `scripts/trustyai_ood_flood.py` / `scripts/trustyai_good_flood.py`.
+
+### Validated screenshots — Observe + flood notebook
+
+**Negative flood** — junk / out-of-domain traffic → both MeanShift curves drop (workbench notebook on the right, Observe on the left):
+
+![Negative flood — curves drop](docs/screenshots/step8-flood-neg-drop.png)
+
+**After flood traffic** — MeanShift moving over the time window:
+
+![Observe after flood traffic](docs/screenshots/step8-observe-after-flood.png)
+
+**Positive flood attempt** — sending only one class (or huge repeats) can keep the *other* curve low; recover with **balanced** chihuahua + muffin traffic (§8.6 table):
+
+![Positive one-class flood — both curves may stay low](docs/screenshots/step8-flood-pos-attempt.png)
 
 <a id="87-reset"></a>
 
