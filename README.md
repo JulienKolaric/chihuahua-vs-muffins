@@ -24,13 +24,14 @@ Lab on **OpenShift AI 3.5**: S3 → train → serve → guardrails → TrustyAI 
 | 7 | [Guardrails (confidence / margin)](#step-7) | ✅ |
 | 8 | [TrustyAI](#step-8) | ✅ |
 | 9 | [Pipelines](#step-9) | ✅ |
-| 10 | [AutoML](#step-10) | ⬜ |
-| 11 | Gen AI — Muffin Court | ⬜ |
+| 10 | [AutoML](#step-10) | ✅ |
+| 11 | [Gen AI — Muffin Court](#step-11) | ⬜ |
 
-Jump: [0](#step-0) · [1](#step-1) · [2](#step-2) · [3](#step-3) · [4](#step-4) · [5](#step-5) · [6](#step-6) · [7](#step-7) · [8](#step-8) · [9](#step-9) · [10](#step-10)  
+Jump: [0](#step-0) · [1](#step-1) · [2](#step-2) · [3](#step-3) · [4](#step-4) · [5](#step-5) · [6](#step-6) · [7](#step-7) · [8](#step-8) · [9](#step-9) · [10](#step-10) · [11](#step-11)  
 Step 8: [8.1](#81-install) · [8.2](#82-names) · [8.3](#83-training) · [8.4](#84-read) · [8.5](#85-observe) · [8.6](#86-flood) · [8.7](#87-reset)  
 Step 9: [9.1](#91-configure) · [9.2 smoke](#92-smoke) · [9.3](#93-out)  
-Step 10: [10.1](#101-data) · [10.2](#102-run) · [10.3](#103-read)
+Step 10: [10.1](#101-data) · [10.2](#102-run) · [10.3](#103-read)  
+Step 11: [11.1](#111-why) · [11.2](#112-deploy) · [11.3](#113-playground)
 
 ---
 
@@ -905,10 +906,10 @@ Status: **Developer Preview** on this product line.
 
 ## What we will do (checklist)
 
-1. Put a small CSV on MinIO (`automl-demo/train.csv`)
-2. Start an AutoML **binary classification** run (UI *or* tabular pipeline)
-3. Wait **Completed** → open the **leaderboard**
-4. Screenshot for the doc (freeze §10.3 after validation)
+1. Upload CSV to MinIO (`automl-demo/train.csv`, **≥ 100 rows**)
+2. **Develop & train → AutoML** → enable AutoML pipelines (once per project)
+3. **Create AutoML optimization run** → binary · target **`label`**
+4. Wait **Succeeded** → read the **leaderboard**
 
 **Prerequisite:** pipeline server **Ready** (Step 9) ✅
 
@@ -916,68 +917,162 @@ Status: **Developer Preview** on this product line.
 
 ## 10.1 Lab CSV (toy tabular “muffin vs chihuahua”)
 
-File: [`data/automl/train.csv`](data/automl/train.csv)
+**Why a CSV?** AutoML needs a **table**, not photos. Each row is a fake example with simple scores (0–1). The column **`label`** is the answer (`muffin` / `chihuahua`). AutoML learns to predict that column — a platform demo, separate from the vision OVMS model.
 
-- ~30 rows, numeric “features” (`crumb_density`, `ear_pointiness`, …)
-- Label column: **`label`** = `muffin` | `chihuahua`
-- This is **not** image data — only a fun binary-class CSV for AutoML
+File: [`data/automl/train.csv`](data/automl/train.csv) · column legend: [`data/automl/COLUMNS.md`](data/automl/COLUMNS.md)
 
-Upload to the lab bucket (from a machine with `mc` / AWS CLI against MinIO):
+- **≥ 100 data rows** required by the UI (error if fewer) — lab file has **120**
+- Fun features everyone can read:
+
+| Column | Meaning |
+|--------|---------|
+| `pointy_ears` | oreilles pointues |
+| `has_fur` | fourrure |
+| `looks_like_pastry` | ressemble à un gâteau |
+| `round_shape` | forme ronde |
+| `brown_like_crust` | brun comme une croûte |
+| `cute_eyes` | yeux mignons |
+| **`label`** | **`muffin`** ou **`chihuahua`** (à prédire) |
 
 ```bash
-# Example with mc (adjust alias / endpoint to your lab)
+export MINIO_ENDPOINT_EXTERNAL="https://$(oc -n lab-minio get route minio-api -o jsonpath='{.spec.host}')"
+mc alias set lab "$MINIO_ENDPOINT_EXTERNAL" minio minio123 --api S3v4 --insecure
 mc cp data/automl/train.csv lab/muffin-chihuahua/automl-demo/train.csv --insecure
 ```
-
-Target object:
 
 | | |
 |--|--|
 | Bucket | `muffin-chihuahua` |
 | Key | `automl-demo/train.csv` |
-| Connection | reuse **`minio-lab`** (same as pipelines) |
+| Connection | **`minio-lab`** |
 
 <a id="102-run"></a>
 
-## 10.2 Create the AutoML run (you play this)
+## 10.2 Create the AutoML run (validated)
 
-**Preferred UI (if AutoML is enabled on the cluster):**
+AutoML lives under **Develop & train → AutoML** (not inside the project tabs). Select project **`chihuahua-vs-muffin-jan`**.
 
-1. OpenShift AI → **AutoML** (or **Develop & train → AutoML**)
-2. **Create optimization run**
-3. Project: `chihuahua-vs-muffin-jan`
-4. Training data: connection **`minio-lab`** + file `automl-demo/train.csv`  
-   *(or upload the CSV if the form allows ≤32 MiB)*
-5. Task: **Binary classification**
-6. Target / label column: **`label`**
-7. Create → wait until the run finishes
+**First time only — enable pipelines:**
 
-**Alternate (pipeline import):** import `autogluon-tabular-training-pipeline` from [pipelines-components](https://github.com/red-hat-data-services/pipelines-components/tree/rhoai-3.4/pipelines/training/automl/autogluon_tabular_training_pipeline), then **Create run** with parameters like:
+1. Click **Enable AutoML pipelines**
+2. Check **Enable AutoML and AutoRAG pipelines**
+3. Confirm (pipeline server **restarts**)
 
-| Parameter | Lab value |
-|-----------|-----------|
-| `train_data_bucket_name` | `muffin-chihuahua` |
-| `train_data_file_key` | `automl-demo/train.csv` |
-| `label_column` | `label` |
-| `task_type` | `binary` |
-| `train_data_secret_name` | secret from connection **`minio-lab`** (check in OpenShift → Secrets) |
+**Then create a run:**
 
-Expect: pipeline **Succeeded** / optimization run **Completed**, plus a **leaderboard** artifact.
-
-*(Exact menu names + secret name will be frozen here after your screenshots.)*
+1. **Create AutoML optimization run**
+2. **Name:** `muffin-tabular-automl`
+3. Documents: connection **`minio-lab`** → **Browse bucket** → `automl-demo/train.csv` → **Select**
+4. **Target column:** **`label`** (not a numeric feature)
+5. Prediction type becomes **binary** (2 categories)
+6. Run preset: **Faster** (4 vCPU / 16 GiB) · Top models: **3**
+7. **Create run** → wait **Succeeded**
 
 <a id="103-read"></a>
 
-## 10.3 How to read the result
+## 10.3 How to read the result (validated)
+
+**In plain language:** AutoML tried several models and ranked them. The leaderboard is the podium.
 
 | You see | Meaning |
 |---------|---------|
-| Leaderboard | Models ranked (accuracy / AUC / …) — pick a “winner” |
-| Artifacts / notebook | Optional exploration of the best predictor |
-| Contrast for the team | “Vision muffin model” ≠ “tabular AutoML model” — same theme, different platform feature |
+| **Succeeded** | Job finished cleanly |
+| Graph | Prepare → split → train several models → **Build leaderboard** |
+| Leaderboard | Ranked models + **Accuracy** (share of correct labels on the held-out test rows) |
+| Winning model | Best pick for this run (example below) |
+
+### Validated on this lab
+
+| | |
+|--|--|
+| Run | `muffin-tabular-automl` |
+| Status | **Succeeded** · ~2 m 48 s |
+| Models evaluated | 3 |
+| Winning model | `LightGBMLarge_BAG_L1_FULL` |
+| Metric | Accuracy |
+| Leaderboard | LightGBM / NeuralNet / XGBoost — all **1.000** on this toy CSV (easy separation) |
+
+![AutoML Succeeded — leaderboard](docs/screenshots/step10-automl-leaderboard.png)
+
+**Team sync:** same muffin/chihuahua *theme*, different feature — vision OVMS ≠ tabular AutoML. No need to deploy the AutoML winner for this lab.
 
 ## 10.4 Out of scope for the first pass
 
 - Serving the AutoML model on OVMS next to `muffin-chihuahua`
 - Time-series AutoML
 - Replacing Steps 4–6 with AutoML
+- Feeding **photos** into AutoML (not supported — use CSV)
+
+---
+
+<a id="step-11"></a>
+
+# Step 11 — Gen AI — Muffin Court
+
+<a id="111-why"></a>
+
+## Why this step (plain language)
+
+Until now we had **predictive** AI (OVMS: photo → muffin/chihuahua).  
+Step 11 adds **generative** AI: a chat model that plays **Judge Muffin Court** — a funny “verdict” from the prediction.
+
+| | Predictive (Steps 5–7) | Generative (this step) |
+|--|------------------------|-------------------------|
+| Model | `muffin-chihuahua` OVMS | Separate **Gen AI** deploy (vLLM / catalog) |
+| Input | Image tensor | Text (label + confidence, or a short story) |
+| Output | Class scores | Courtroom-style sentences |
+| UI | Infer / notebooks | **Gen AI studio → Playground** |
+
+**One-liner:** OVMS is the expert witness; the LLM is the theatrical judge.
+
+Docs (3.5): Gen AI studio / playground are often **Technology Preview** — need admin enablement + usually a **GPU**.
+
+## What we will do (checklist)
+
+1. Deploy a **small generative** model (catalog) as AI asset / chat endpoint  
+2. Open **Playground**, attach that model  
+3. Paste the **Judge Muffin Court** system prompt  
+4. Demo: muffin 97% → funny verdict · tea cup / uncertain → **OUT OF ORDER / HUMAN REVIEW**
+
+<a id="112-deploy"></a>
+
+## 11.1 Deploy a generative model (you play)
+
+**UI path (typical RHOAI 3.5):**
+
+1. Project **`chihuahua-vs-muffin-jan`** → **Deployments** → **Deploy model**
+2. Choose **Generative AI model** (not Predictive / OVMS)
+3. Pick a **small instruct** model from the **Model catalog** that fits your quota
+4. Runtime: usually **vLLM** (follow cluster defaults)
+5. Enable **Add as AI asset endpoint** · use case **chat**
+6. Wait until deployment is **Ready**
+
+*(Exact model name + screenshots frozen after your first Ready deploy.)*
+
+If Gen AI / GPU is missing on the sandbox, stop here and note it in the team sync — do not force a huge model.
+
+<a id="113-playground"></a>
+
+## 11.2 Playground — Judge Muffin Court
+
+1. **Gen AI studio → Playground** (or AI asset endpoints → **Add to playground**)
+2. Select project + your generative endpoint
+3. Set system / prompt to something like:
+
+```text
+You are Judge Muffin Court. Given a predictive result (label + confidence),
+write a short funny courtroom verdict (3–6 sentences), PG-rated.
+Only two possible food/animal rulings: blueberry muffin OR chihuahua.
+If the input is uncertain, OOD, tea cup, or "human review", rule:
+OUT OF ORDER / HUMAN REVIEW — do not force muffin or chihuahua.
+```
+
+4. Try messages such as:
+   - `Prediction: muffin 0.97` → witty “guilty of being breakfast” style verdict  
+   - `Prediction: uncertain (tea cup / low margin)` → **OUT OF ORDER / HUMAN REVIEW**
+
+## 11.3 Out of scope
+
+- Replacing OVMS with the LLM for image classification  
+- Serving the Step 10 AutoML model as the judge  
+- Production RAG / AutoRAG (optional later)
