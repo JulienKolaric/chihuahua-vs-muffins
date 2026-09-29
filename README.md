@@ -1166,6 +1166,8 @@ OUT OF ORDER / HUMAN REVIEW — do not force muffin or chihuahua.
    - `Prediction: muffin 0.97` → witty “guilty of being breakfast” style verdict  
    - `Prediction: uncertain (tea cup / low margin)` → **OUT OF ORDER / HUMAN REVIEW**
 
+![Playground — tea cup / human review verdict](docs/screenshots/step11-playground-teacup.png)
+
 ## 11.3 Out of scope
 
 - Replacing OVMS with the LLM for image classification  
