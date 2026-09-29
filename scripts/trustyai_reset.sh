@@ -19,14 +19,14 @@ echo "HOST=$HOST"
 echo "POD=$POD"
 
 echo "=== 1) Delete all MeanShift schedules ==="
-IDS=$(curl -sk -H "Authorization: Bearer $TOKEN" \
+IDS=$(curl -sk --max-time 30 -H "Authorization: Bearer $TOKEN" \
   "https://$HOST/metrics/drift/meanshift/requests" \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print(' '.join(r['id'] for r in d.get('requests',[])))" 2>/dev/null || true)
 if [[ -z "${IDS// }" ]]; then
   echo "(none)"
 else
   for id in $IDS; do
-    curl -sk -H "Authorization: Bearer $TOKEN" -X DELETE \
+    curl -sk --max-time 30 -H "Authorization: Bearer $TOKEN" -X DELETE \
       "https://$HOST/metrics/drift/meanshift/request" \
       -H "Content-Type: application/json" \
       -d "{\"requestId\":\"$id\"}" >/dev/null
@@ -42,13 +42,21 @@ echo "=== 3) Restart TrustyAI pod ==="
 oc -n "$NS" delete pod -l app=trustyai-service --wait=false
 oc -n "$NS" wait --for=condition=Ready pod -l app=trustyai-service --timeout=180s
 
-HOST=$(oc -n "$NS" get route trustyai-service -o jsonpath='{.spec.host}')
+# Route can lag a few seconds after the new pod is Ready
+for _ in 1 2 3 4 5 6; do
+  if curl -sk --max-time 10 -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOKEN" \
+    "https://$HOST/info" | grep -qE '200|404'; then
+    break
+  fi
+  sleep 5
+done
+
 echo "=== 4) Verify empty state ==="
 echo -n "/info → "
-curl -sk -H "Authorization: Bearer $TOKEN" "https://$HOST/info"
+curl -sk --max-time 15 -H "Authorization: Bearer $TOKEN" "https://$HOST/info" || echo "(route not ready yet)"
 echo
 echo -n "/info/tags → "
-curl -sk -H "Authorization: Bearer $TOKEN" "https://$HOST/info/tags"
+curl -sk --max-time 15 -H "Authorization: Bearer $TOKEN" "https://$HOST/info/tags" || echo "(route not ready yet)"
 echo
 echo
 echo "Reset done. Replay Step 8 from §8.2 onward:"
