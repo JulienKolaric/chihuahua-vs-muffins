@@ -1,4 +1,11 @@
-"""Minimal smoke pipeline for RHOAI Step 9."""
+"""Minimal smoke pipeline for RHOAI Step 9.
+
+What it does: one task "say-hello" that prints
+  hello <name> from chihuahua-vs-muffin lab
+Default name=muffin. Not training / OVMS / TrustyAI — only proves pipelines work.
+
+Compile: python pipelines/smoke_hello.py → lab_smoke_hello.yaml
+"""
 from kfp import dsl, compiler
 
 

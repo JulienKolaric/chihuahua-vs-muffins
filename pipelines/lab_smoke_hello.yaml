@@ -1,6 +1,14 @@
 # PIPELINE DEFINITION
 # Name: lab-smoke-hello
-# Description: Step 9 smoke: one print task
+# Description: Step 9 smoke — hello-world only (one print task).
+#
+# What this does:
+#   - Starts one pipeline pod
+#   - Task "say-hello" prints: hello <name> from chihuahua-vs-muffin lab
+#   - Default name = muffin
+#   - Does NOT train, serve, or call TrustyAI
+#
+# Source: pipelines/smoke_hello.py
 # Inputs:
 #    name: str [Default: 'muffin']
 components:

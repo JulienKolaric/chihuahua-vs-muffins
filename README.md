@@ -24,11 +24,13 @@ Lab on **OpenShift AI 3.5**: S3 → train → serve → guardrails → TrustyAI 
 | 7 | [Guardrails (confidence / margin)](#step-7) | ✅ |
 | 8 | [TrustyAI](#step-8) | ✅ |
 | 9 | [Pipelines](#step-9) | ✅ |
-| 10 | AutoML | ⬜ |
+| 10 | [AutoML](#step-10) | ⬜ |
 | 11 | Gen AI — Muffin Court | ⬜ |
 
-Jump: [0](#step-0) · [1](#step-1) · [2](#step-2) · [3](#step-3) · [4](#step-4) · [5](#step-5) · [6](#step-6) · [7](#step-7) · [8](#step-8) · [9](#step-9)  
-Step 8: [8.1](#81-install) · [8.2](#82-names) · [8.3](#83-training) · [8.4](#84-read) · [8.5](#85-observe) · [8.6](#86-flood) · [8.7](#87-reset)
+Jump: [0](#step-0) · [1](#step-1) · [2](#step-2) · [3](#step-3) · [4](#step-4) · [5](#step-5) · [6](#step-6) · [7](#step-7) · [8](#step-8) · [9](#step-9) · [10](#step-10)  
+Step 8: [8.1](#81-install) · [8.2](#82-names) · [8.3](#83-training) · [8.4](#84-read) · [8.5](#85-observe) · [8.6](#86-flood) · [8.7](#87-reset)  
+Step 9: [9.1](#91-configure) · [9.2 smoke](#92-smoke) · [9.3](#93-out)  
+Step 10: [10.1](#101-data) · [10.2](#102-run) · [10.3](#103-read)
 
 ---
 
@@ -775,8 +777,11 @@ Docs: [Managing AI pipelines (RHOAI 3.5)](https://docs.redhat.com/en/documentati
 ## What we will do (checklist)
 
 1. **Configure pipeline server** (MinIO + default DB) → status **Ready**
-2. **Smoke run** — import a tiny pipeline → **Succeeded**
+2. **Smoke run** — import [`lab_smoke_hello.yaml`](pipelines/lab_smoke_hello.yaml) → **Succeeded**  
+   *(does **one** thing: print `hello muffin…` in a pod — see [§9.2](#92-smoke))*
 3. *(Optional later)* fil rouge: download S3 → train/export ONNX → upload `models/muffin-chihuahua/1/`
+
+<a id="91-configure"></a>
 
 ## 9.1 Configure pipeline server (do this first)
 
@@ -801,21 +806,29 @@ oc -n chihuahua-vs-muffin-jan get pods | grep -i pipeline
 
 Pods related to `ds-pipeline` / `mariadb` (or equivalent) should be **Running**.
 
-## 9.2 Smoke run (after server is Ready)
+<a id="92-smoke"></a>
+
+## 9.2 Smoke run — what `lab_smoke_hello.yaml` does
 
 ### What this pipeline does (plain language)
 
-[`lab-smoke-hello`](pipelines/lab_smoke_hello.yaml) is a **hello-world** for the platform — not training, not OVMS, not TrustyAI.
+[`pipelines/lab_smoke_hello.yaml`](pipelines/lab_smoke_hello.yaml) is the lab **hello-world**. It does **not** train the muffin model, call OVMS, or touch TrustyAI.
+
+When you run it, OpenShift AI:
+
+1. Starts **one** pipeline pod  
+2. Runs a single task **`say-hello`** (UBI9 Python image)  
+3. Prints `hello <name> from chihuahua-vs-muffin lab` (default `name=muffin`)  
+4. Exits — run status should be **Succeeded** / **Complete**
 
 | | |
 |--|--|
-| Goal | Prove the pipeline server can **schedule a pod**, **run one task**, and land on **Succeeded** |
-| Graph | One step: **`say-hello`** |
-| What the step does | Starts a small Python container (UBI9), prints `hello <name> from chihuahua-vs-muffin lab`, returns that string |
-| Parameter | `name` (default **`muffin`**) — only changes the printed text |
-| Source | Python DSL [`pipelines/smoke_hello.py`](pipelines/smoke_hello.py) → compiled IR YAML [`pipelines/lab_smoke_hello.yaml`](pipelines/lab_smoke_hello.yaml) |
+| Goal | Prove the pipeline server can schedule a pod and finish cleanly |
+| Graph | One node: **`say-hello`** |
+| Parameter | `name` (string, default **`muffin`**) — only changes the log line |
+| Python source | [`pipelines/smoke_hello.py`](pipelines/smoke_hello.py) (compile → YAML) |
 
-If this run succeeds, pipelines work on the cluster. The muffin fil rouge (S3 → train → ONNX) can come later as an optional follow-on.
+If this succeeds, pipelines work on the cluster. A real muffin train→ONNX pipeline is optional later.
 
 ### Import
 
@@ -859,8 +872,112 @@ python3 -m venv .venv-kfp && .venv-kfp/bin/pip install 'kfp>=2.7,<3'
 .venv-kfp/bin/python pipelines/smoke_hello.py
 ```
 
+<a id="93-out"></a>
+
 ## 9.3 Out of scope for the first pass
 
 - Auto-retrain on every S3 upload
 - Full Kubeflow DAG with Model Registry + redeploy
 - Replacing TrustyAI / serving — pipelines **orchestrate**; they do not replace Steps 5–8
+
+---
+
+<a id="step-10"></a>
+
+# Step 10 — AutoML (tabular)
+
+## Why this step (plain language)
+
+Step 4–6 built a **vision** model (photos → muffin / chihuahua).  
+Step 10 shows a **different** OpenShift AI feature: **AutoML** on a **CSV table**.
+
+AutoML (AutoGluon) tries many models for you, ranks them on a **leaderboard**, and does **not** use your ResNet / OVMS image model.
+
+| | Vision path (Steps 4–6) | AutoML (this step) |
+|--|-------------------------|---------------------|
+| Data | Images on S3 | **CSV** rows + a label column |
+| Who trains | You (notebook) | Platform AutoML pipeline |
+| Output | ONNX on OVMS | Leaderboard + model artifacts |
+| Theme | Real photos | Toy “features” that hint muffin vs dog |
+
+Docs: [Working with AutoML (RHOAI 3.5)](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/working_with_automl) · [examples/automl](https://github.com/red-hat-data-services/red-hat-ai-examples/blob/main/examples/automl/readme.md)  
+Status: **Developer Preview** on this product line.
+
+## What we will do (checklist)
+
+1. Put a small CSV on MinIO (`automl-demo/train.csv`)
+2. Start an AutoML **binary classification** run (UI *or* tabular pipeline)
+3. Wait **Completed** → open the **leaderboard**
+4. Screenshot for the doc (freeze §10.3 after validation)
+
+**Prerequisite:** pipeline server **Ready** (Step 9) ✅
+
+<a id="101-data"></a>
+
+## 10.1 Lab CSV (toy tabular “muffin vs chihuahua”)
+
+File: [`data/automl/train.csv`](data/automl/train.csv)
+
+- ~30 rows, numeric “features” (`crumb_density`, `ear_pointiness`, …)
+- Label column: **`label`** = `muffin` | `chihuahua`
+- This is **not** image data — only a fun binary-class CSV for AutoML
+
+Upload to the lab bucket (from a machine with `mc` / AWS CLI against MinIO):
+
+```bash
+# Example with mc (adjust alias / endpoint to your lab)
+mc cp data/automl/train.csv lab/muffin-chihuahua/automl-demo/train.csv --insecure
+```
+
+Target object:
+
+| | |
+|--|--|
+| Bucket | `muffin-chihuahua` |
+| Key | `automl-demo/train.csv` |
+| Connection | reuse **`minio-lab`** (same as pipelines) |
+
+<a id="102-run"></a>
+
+## 10.2 Create the AutoML run (you play this)
+
+**Preferred UI (if AutoML is enabled on the cluster):**
+
+1. OpenShift AI → **AutoML** (or **Develop & train → AutoML**)
+2. **Create optimization run**
+3. Project: `chihuahua-vs-muffin-jan`
+4. Training data: connection **`minio-lab`** + file `automl-demo/train.csv`  
+   *(or upload the CSV if the form allows ≤32 MiB)*
+5. Task: **Binary classification**
+6. Target / label column: **`label`**
+7. Create → wait until the run finishes
+
+**Alternate (pipeline import):** import `autogluon-tabular-training-pipeline` from [pipelines-components](https://github.com/red-hat-data-services/pipelines-components/tree/rhoai-3.4/pipelines/training/automl/autogluon_tabular_training_pipeline), then **Create run** with parameters like:
+
+| Parameter | Lab value |
+|-----------|-----------|
+| `train_data_bucket_name` | `muffin-chihuahua` |
+| `train_data_file_key` | `automl-demo/train.csv` |
+| `label_column` | `label` |
+| `task_type` | `binary` |
+| `train_data_secret_name` | secret from connection **`minio-lab`** (check in OpenShift → Secrets) |
+
+Expect: pipeline **Succeeded** / optimization run **Completed**, plus a **leaderboard** artifact.
+
+*(Exact menu names + secret name will be frozen here after your screenshots.)*
+
+<a id="103-read"></a>
+
+## 10.3 How to read the result
+
+| You see | Meaning |
+|---------|---------|
+| Leaderboard | Models ranked (accuracy / AUC / …) — pick a “winner” |
+| Artifacts / notebook | Optional exploration of the best predictor |
+| Contrast for the team | “Vision muffin model” ≠ “tabular AutoML model” — same theme, different platform feature |
+
+## 10.4 Out of scope for the first pass
+
+- Serving the AutoML model on OVMS next to `muffin-chihuahua`
+- Time-series AutoML
+- Replacing Steps 4–6 with AutoML
