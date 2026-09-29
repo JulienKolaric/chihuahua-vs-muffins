@@ -730,24 +730,29 @@ Optional CLI equivalents: `scripts/trustyai_ood_flood.py` / `scripts/trustyai_go
 
 <a id="87-reset"></a>
 
-## 8.7 Reset TrustyAI (replay for the next team)
+## 8.7 Reset / uninstall TrustyAI (replay for the next team)
 
-Keeps the platform pieces (TrustyAIService, CA, logger). Clears **stored inferences**, **TRAINING tags**, and **MeanShift jobs** so colleagues can redo §8.2 → §8.6 from an empty `/info`.
+Two levels:
+
+| Goal | Script | What remains |
+|------|--------|----------------|
+| Empty `/info`, redo TRAINING + MeanShift + floods | [`scripts/trustyai_reset.sh`](scripts/trustyai_reset.sh) | TrustyAIService + logger stay |
+| **Full clean** (no TrustyAI pod at all) | [`scripts/trustyai_uninstall.sh`](scripts/trustyai_uninstall.sh) | Nothing — redo from §8.1 |
 
 ```bash
 # oc login first
 export NS=chihuahua-vs-muffin-jan
+
+# Soft reset (data only):
 bash scripts/trustyai_reset.sh
+
+# Or full uninstall (pod / CR / PVC / CA / logger gone):
+bash scripts/trustyai_uninstall.sh
 ```
 
-What the script does:
+**Full uninstall** removes: TrustyAIService, pods, route, PVC, `kserve-logger-ca-bundle`, ServiceMonitor, and the InferenceService `predictor.logger`. Model serve (OVMS) stays up.
 
-1. `DELETE` every MeanShift schedule  
-2. `rm` model CSV/metadata under `/data` inside the TrustyAI pod  
-3. Restart the TrustyAI pod  
-4. Print `/info` / `/info/tags` (expect `{}` until you replay)
-
-Then follow the checklist again from the first captured `/infer`. Do **not** delete the TrustyAI PVC unless storage is corrupted — file wipe is enough.
+Then colleagues start again at **§8.1**.
 
 ---
 
