@@ -22,7 +22,7 @@ Lab on **OpenShift AI 3.5**: S3 → train → serve → guardrails → TrustyAI 
 | 5 | Deploy model (OVMS) | ✅ |
 | 6 | Call the API | ✅ |
 | 7 | Guardrails (confidence / margin) | ✅ |
-| 8 | TrustyAI | ⬜ |
+| 8 | TrustyAI | ✅ |
 | 9 | Pipelines | ⬜ |
 | 10 | AutoML | ⬜ |
 | 11 | Gen AI — Muffin Court | ⬜ |
@@ -409,20 +409,366 @@ If OOD images are still accepted → raise `CONF_MIN` / `MARGIN_MIN` in the note
 
 ---
 
-# Step 8 — TrustyAI / platform guardrails
+# Step 8 — TrustyAI (platform monitoring)
 
-OpenShift AI has **two different ideas** often both called “guardrails”:
+## Why this step (plain language)
 
-| | Client confidence (Step 7) | TrustyAI (this step) |
-|--|---------------------------|----------------------|
-| Where | Your notebook / app | Platform service in the project |
-| What | Reject low-confidence predictions | Capture inference payloads, drift, (LLM) guardrails operators |
-| Model type | Any predictive API | Drift metrics: **OVMS** models |
+**In one sentence:** we teach TrustyAI what a “normal muffin / chihuahua” looks like, so later it can say: “the traffic has changed.”
 
-We continue with **TrustyAI** for the predictive muffin/chihuahua service.
+### What we already did
 
-*Run the inventory paste in chat next.*
+1. **The model answers** — you send an image, OVMS says muffin or chihuahua.
+2. **The KServe agent copies** each `/infer` call to TrustyAI (like a security camera on the traffic).
+3. **TrustyAI stores it** — `/info` with `observations: 12` means 12 predictions were recorded.
+
+Without that pipeline, TrustyAI sees nothing (`{}`).
+
+### What we do next
+
+Those observations are just “traffic”. To measure **drift**, TrustyAI needs a **reference**:
+
+- **TRAINING** = “this is what the normal world looks like” (real muffins + real chihuahuas).
+- We **upload** those examples with the `TRAINING` tag (`/data/upload`).
+- Then we schedule **MeanShift**: a statistical alarm that compares  
+  *live traffic* ↔ *TRAINING reference*.
+
+### End goal for the team sync
+
+- Normal images → little / no drift.  
+- OOD photos (tea cup, screenshot…) → the drift score moves → you show: “the world has changed.”
+
+### What this is *not*
+
+This is **not** the Step 7 confidence guardrail (`uncertain` on a single image).  
+That protects **one API call**. TrustyAI is **MLOps**: watch traffic over time — it does **not** block the request.
+
+| | Step 7 — confidence | Step 8 — TrustyAI |
+|--|---------------------|-------------------|
+| Where | Your notebook / app | Service in the OpenShift AI project |
+| Job | Reject a single weak prediction (`uncertain`) | Record traffic + detect **data drift** over time |
+| Blocks the request? | Yes (if you honor `uncertain`) | No — it **observes** |
+| Typical demo | Tea cup → uncertain | Many odd photos → drift metric rises |
+
+**Not in this step:** LLM “Guardrails” (Nemo / GuardrailsOrchestrator). That is Gen AI later. Here we monitor the **predictive OVMS** model only.
+
+Official docs (3.5):  
+[Configuring TrustyAI](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/monitoring_your_ai_systems/configuring-trustyai_monitor) ·  
+[Set up TrustyAI for your project](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/monitoring_your_ai_systems/setting-up-trustyai-for-your-project_monitor) ·  
+[Data drift](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/monitoring_your_ai_systems/monitoring-data-drift_drift-monitoring)
+
+## What we will do (checklist)
+
+1. Install **TrustyAIService** + CA ConfigMap
+2. Enable InferenceService logger + fix RawDeployment TLS
+3. Prove capture: `/info` shows `muffin-chihuahua` with `observations ≥ 1`
+4. **Name mapping** (setup): `output-0`→`chihuahua`, `output-1`→`muffin` via `/info/names`
+5. Send a **TRAINING** baseline (`TRAINING: 4` via `/data/upload`)
+6. Schedule **MeanShift** (`metricCounts.MEANSHIFT: 1`)
+7. Watch drift in Observe (`trustyai_meanshift`) + flood neg / pos
+8. *(Facilitator)* Reset with [`scripts/trustyai_reset.sh`](scripts/trustyai_reset.sh) before the next team replay — see §8.7
+
+## 8.1 Install TrustyAI + CA bundle (validated)
+
+```bash
+oc apply -f - <<'EOF'
+apiVersion: trustyai.opendatahub.io/v1
+kind: TrustyAIService
+metadata:
+  name: trustyai-service
+  namespace: chihuahua-vs-muffin-jan
+  annotations:
+    trustyai.opendatahub.io/kserve-logger-http: "true"
+spec:
+  storage:
+    format: "PVC"
+    folder: "/data"
+    size: "1Gi"
+  data:
+    filename: "data.csv"
+    format: "CSV"
+  metrics:
+    schedule: "5s"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kserve-logger-ca-bundle
+  namespace: chihuahua-vs-muffin-jan
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+data: {}
+EOF
+```
+
+### 8.1b RawDeployment TLS (validated — required on this cluster)
+
+The TrustyAI operator keeps the InferenceService logger on **HTTPS**. Patching to `http://` is reverted. Without a CA, the agent fails with `x509: certificate signed by unknown authority` and `/info` stays `{}`.
+
+Add CA + `tlsSkipVerify` to the cluster KServe ConfigMap (`redhat-ods-applications`), then recreate the predictor pod:
+
+```bash
+# Merge into inferenceservice-config .data.logger:
+#   "caBundle": "kserve-logger-ca-bundle",
+#   "caCertFile": "service-ca.crt",
+#   "tlsSkipVerify": true
+# Then: oc -n chihuahua-vs-muffin-jan delete pod -l serving.kserve.io/inferenceservice=muffin-chihuahua
+```
+
+| | |
+|--|--|
+| TrustyAIService | `trustyai-service` Ready |
+| Route | `https://trustyai-service-chihuahua-vs-muffin-jan.apps.ocp.dv6rj.sandbox1011.opentlc.com` |
+| CA ConfigMap | `kserve-logger-ca-bundle` with injected `service-ca.crt` |
+| KServe logger CM | `caBundle` + `tlsSkipVerify: true` in `inferenceservice-config` |
+| InferenceService logger | `mode: all` · `url: https://trustyai-service.…svc` (HTTPS kept by operator) |
+| Capture check | `/info` → `muffin-chihuahua` · `observations ≥ 1` |
+
+### Pitfalls (validated)
+
+1. Only **`POST /infer`** feeds TrustyAI — not metadata `GET`.
+2. Predictor Service is **headless** (`clusterIP: None`). Use **`:9081`** (agent) for capture. `:80` → Connection refused; `:8888` bypasses the logger.
+3. Do not rely on HTTP logger URL alone — operator rewrites to HTTPS; fix TLS via `inferenceservice-config`.
+4. Workbench → TrustyAI `/data/upload` can **timeout** on huge image tensors. Build JSON on the workbench, upload via **`oc exec` into the TrustyAI pod** (`curl http://127.0.0.1:8080/data/upload`). Script: [`scripts/trustyai_training_upload.py`](scripts/trustyai_training_upload.py).
+
+## 8.2 Name mapping — part of setup (not a later fix)
+
+As soon as `/info` shows the model schema (after the **first** captured `/infer`), apply human-readable names. Training / ImageFolder order is `['chihuahua', 'muffin']`:
+
+| Tensor name | Label |
+|-------------|-------|
+| `output-0` | **chihuahua** |
+| `output-1` | **muffin** |
+| `input` | **image** |
+
+Do this **before** TRAINING upload and MeanShift so Observe never shows raw `output-*` in the lab path.
+
+If you already scheduled MeanShift with `output-0` / `output-1`, **delete** that request and create a new one after names — Prometheus may keep stale `output-*` series; in Observe filter:
+
+```promql
+trustyai_meanshift{subcategory=~"chihuahua|muffin"}
+```
+
+```bash
+# One-liner setup (requires TOKEN + oc login)
+NS=chihuahua-vs-muffin-jan
+bash scripts/trustyai_setup_names.sh
+```
+
+Or:
+
+```bash
+export TOKEN=$(oc whoami -t)
+HOST=$(oc -n chihuahua-vs-muffin-jan get route trustyai-service -o jsonpath='{.spec.host}')
+curl -sk -H "Authorization: Bearer $TOKEN" -X POST \
+  "https://$HOST/info/names" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "modelId": "muffin-chihuahua",
+    "inputMapping": { "input": "image" },
+    "outputMapping": {
+      "output-0": "chihuahua",
+      "output-1": "muffin"
+    }
+  }'
+```
+
+Prerequisite: at least one observation already in TrustyAI (schema must exist).
+
+## 8.3 TRAINING baseline + MeanShift (validated)
+
+| | |
+|--|--|
+| Tags | `TRAINING: 4` · live traffic stays `_trustyai_unlabeled` |
+| MeanShift requestId | **yours from the POST response** (example after one rebuild: `53cc6651-…`) |
+| Fit columns | `chihuahua`, `muffin` (name mapping **before** schedule) |
+| `/info` | `metricCounts: { MEANSHIFT: 1 }` |
+| Observe | `trustyai_meanshift{request="<your-requestId>"}` |
+
+**Keep the dataset small.** Each logged image stores a full 224×224×3 tensor (~2 MiB). ~150 rows broke TrustyAI reload (`/info` → `{}`). Lab rule: **4 TRAINING + a handful of live/OOD**, not mass floods.
+
+**How we uploaded TRAINING** (image JSON is huge — workbench → TrustyAI often times out):
+
+1. Build payloads on the workbench with [`scripts/trustyai_training_upload.py`](scripts/trustyai_training_upload.py) (infer via **`:8888`** so we do not double-log).
+2. `oc cp` each `train_*.json` out, then upload **from inside the TrustyAI pod**:  
+   `curl http://127.0.0.1:8080/data/upload`.
+3. Check: `GET /info/tags` → `TRAINING: 4`.
+
+```bash
+curl -sk -H "Authorization: Bearer $TOKEN" -X POST \
+  "https://$HOST/metrics/drift/meanshift/request" \
+  -H "Content-Type: application/json" \
+  -d '{"modelId":"muffin-chihuahua","referenceTag":"TRAINING"}'
+```
+
+One-shot check (no Observe needed):
+
+```bash
+curl -sk -H "Authorization: Bearer $TOKEN" -X POST \
+  "https://$HOST/metrics/drift/meanshift" \
+  -H "Content-Type: application/json" \
+  -d '{"modelId":"muffin-chihuahua","referenceTag":"TRAINING"}'
+```
+
+## 8.4 How to read `trustyai_meanshift` (plain language)
+
+**MeanShift = “how much does live traffic still look like TRAINING?”**
+
+Each value is a **p-value**:
+
+| Value | Reading |
+|-------|---------|
+| Near **1** | Same world as TRAINING → little / no drift |
+| **Dropping** | Traffic is changing |
+| **&lt; 0.05** | Statistically strong drift (alert territory) |
+
+On the graph (after §8.2 name mapping) you see two series:
+
+- **`chihuahua`** — score for class 0  
+- **`muffin`** — score for class 1  
+
+Validated demo numbers on this lab:
+
+| Moment | chihuahua | muffin |
+|--------|-----------|--------|
+| After TRAINING only | ~0.97 | ~0.95 |
+| After real OOD traffic | ~0.70 | ~0.58 |
+
+Still above 0.05 (not a hard alarm), but the curve **moves down** = TrustyAI sees the world changing.
+
+**Sync one-liner:** *We put a camera on the model. TRAINING is normal. MeanShift compares. Lower = inputs left the training world.*
+
+## 8.5 See it in the OpenShift console (validated)
+
+On this sandbox, **user-workload monitoring was off** → Observe showed *No datapoints found* even though `/q/metrics` had `trustyai_meanshift`.
+
+Enable once (cluster admin):
+
+```bash
+oc apply -f - <<'EOF'
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-monitoring-config
+  namespace: openshift-monitoring
+data:
+  config.yaml: |
+    enableUserWorkload: true
+EOF
+# Wait until: oc -n openshift-user-workload-monitoring get pods
+# prometheus-user-workload-0 must be Ready
+```
+
+Also drop restrictive `params.match[]` on the TrustyAI ServiceMonitor if present (keep `path: /q/metrics` + `metricRelabelings: trustyai_.*`).
+
+In the UI:
+
+1. Perspective **Developer** (not Administrator).
+2. Project **`chihuahua-vs-muffin-jan`**.
+3. **Observe → Metrics**.
+4. Expression (use **your** MeanShift `requestId` from §8.3, or all series):
+   ```promql
+   trustyai_meanshift{model="muffin-chihuahua"}
+   ```
+   Time range **15m**, Refresh **15s** · **Run queries**.
+5. Wait 1–2 minutes after traffic for the curve to move.
+
+## 8.6 Demo loop (workbench notebook)
+
+**Run in the workbench:** [`notebooks/09_trustyai_flood.ipynb`](notebooks/09_trustyai_flood.ipynb)
+
+Observe (15m, refresh 15s):
+
+```promql
+trustyai_meanshift{model="muffin-chihuahua"}
+```
+
+Or pin one job: `trustyai_meanshift{request="<your-requestId>"}`.
+
+Two floods only — enough for the drift story:
+
+| # | Flood | Send | Expect |
+|---|-------|------|--------|
+| 1 | **Negative** | synthetic junk (noise, colors, scribbles) | both curves ↓ |
+| 2 | **Positive** | real chihuahuas **+** muffins (50/50) | both curves ↑ toward 1 |
+
+Run one cell, wait ~1–2 min, then the next. Keep volumes small (`repeats=2`, ~2 MiB per image in TrustyAI).
+
+Optional CLI equivalents: `scripts/trustyai_ood_flood.py` / `scripts/trustyai_good_flood.py`.
+
+## 8.7 Reset TrustyAI (replay for the next team)
+
+Keeps the platform pieces (TrustyAIService, CA, logger). Clears **stored inferences**, **TRAINING tags**, and **MeanShift jobs** so colleagues can redo §8.2 → §8.6 from an empty `/info`.
+
+```bash
+# oc login first
+export NS=chihuahua-vs-muffin-jan
+bash scripts/trustyai_reset.sh
+```
+
+What the script does:
+
+1. `DELETE` every MeanShift schedule  
+2. `rm` model CSV/metadata under `/data` inside the TrustyAI pod  
+3. Restart the TrustyAI pod  
+4. Print `/info` / `/info/tags` (expect `{}` until you replay)
+
+Then follow the checklist again from the first captured `/infer`. Do **not** delete the TrustyAI PVC unless storage is corrupted — file wipe is enough.
 
 ---
 
-*v1.0 — each step written only after it is done.*
+# Step 9 — Pipelines
+
+## Why this step (plain language)
+
+Until now we ran notebooks **by hand**. Pipelines answer: *can we package that work as a repeatable run on the platform?*
+
+| | Notebooks (Steps 4–6) | Pipelines (Step 9) |
+|--|----------------------|---------------------|
+| Who clicks | You, cell by cell | Schedule / Run |
+| Where it runs | Workbench | Pipeline pods |
+| Storage | MinIO for data/model | Same MinIO for pipeline artifacts |
+
+Docs: [Managing AI pipelines (RHOAI 3.5)](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/working_with_ai_pipelines/managing-ai-pipelines_ai-pipelines)
+
+## What we will do (checklist)
+
+1. **Configure pipeline server** (MinIO + default DB) → status **Ready**
+2. **Smoke run** — import a tiny pipeline → **Succeeded**
+3. *(Optional later)* fil rouge: download S3 → train/export ONNX → upload `models/muffin-chihuahua/1/`
+
+## 9.1 Configure pipeline server (do this first)
+
+**UI:** OpenShift AI → project **`chihuahua-vs-muffin-jan`** → **Pipelines** → **Configure pipeline server**
+
+Reuse lab MinIO (same idea as connection `minio-lab`):
+
+| Field | Value |
+|-------|--------|
+| Access key | `minio` |
+| Secret key | `minio123` |
+| Endpoint | `http://minio.lab-minio.svc.cluster.local:9000` |
+| Region | `us-east-1` |
+| Bucket | `muffin-chihuahua` |
+| Database | **Default database on the cluster** (lab OK) |
+
+Click **Configure** → wait until the pipeline server is **Ready**.
+
+```bash
+oc -n chihuahua-vs-muffin-jan get pods | grep -i pipeline
+```
+
+Pods related to `ds-pipeline` / `mariadb` (or equivalent) should be **Running**.
+
+## 9.2 Smoke run (after server is Ready)
+
+1. **Pipelines** → **Import pipeline** (YAML or sample from the UI).
+2. **Create run** → wait until status **Succeeded**.
+3. Optional: check MinIO for pipeline artifact prefixes under the bucket.
+
+*(We freeze exact import YAML / screenshot notes here once the first Succeeded run is validated on this cluster.)*
+
+## 9.3 Out of scope for the first pass
+
+- Auto-retrain on every S3 upload
+- Full Kubeflow DAG with Model Registry + redeploy
+- Replacing TrustyAI / serving — pipelines **orchestrate**; they do not replace Steps 5–8
