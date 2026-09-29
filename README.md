@@ -31,7 +31,7 @@ Jump: [0](#step-0) · [1](#step-1) · [2](#step-2) · [3](#step-3) · [4](#step-
 Step 8: [8.1](#81-install) · [8.2](#82-names) · [8.3](#83-training) · [8.4](#84-read) · [8.5](#85-observe) · [8.6](#86-flood) · [8.7](#87-reset)  
 Step 9: [9.1](#91-configure) · [9.2 smoke](#92-smoke) · [9.3](#93-out)  
 Step 10: [10.1](#101-data) · [10.2](#102-run) · [10.3](#103-read)  
-Step 11: [11.1](#111-why) · [11.2](#112-deploy) · [11.3](#113-playground)
+Step 11: [why](#111-why) · [11.0](#110-admin-ogx) · [11.1](#112-deploy) · [11.2](#113-playground)
 
 ---
 
@@ -1064,10 +1064,51 @@ Docs (3.5): Gen AI studio / playground are often **Technology Preview** — need
 
 ## What we will do (checklist)
 
-1. Deploy a **small generative** model (catalog) as AI asset / chat endpoint  
-2. Open **Playground**, attach that model  
-3. Paste the **Judge Muffin Court** system prompt  
-4. Demo: muffin 97% → funny verdict · tea cup / uncertain → **OUT OF ORDER / HUMAN REVIEW**
+1. **Admin:** enable Gen AI studio + OGX (see below)  
+2. Deploy a **small generative** model (catalog) as AI asset / chat endpoint  
+3. Open **Playground**, attach that model  
+4. Paste the **Judge Muffin Court** system prompt  
+5. Demo: muffin 97% → funny verdict · tea cup / uncertain → **OUT OF ORDER / HUMAN REVIEW**
+
+<a id="110-admin-ogx"></a>
+
+## 11.0 Admin — enable Playground (OGX)
+
+Playground needs **both**:
+
+1. Dashboard feature **`genAiStudio: true`** (Settings / DataScienceCluster dashboard config — already often on for Gen AI catalog deploys)
+2. Component **`ogx.managementState: Managed`** on the `DataScienceCluster` (`default-dsc`)
+
+### Critical: do not leave Llama Stack and OGX both Managed
+
+On OpenShift AI **3.5**, **Llama Stack Operator is deprecated** and replaced by **OGX**.  
+If **both** stay `Managed`, OGX **never provisions**:
+
+| Spec | Bad (stuck) | Good |
+|------|-------------|------|
+| `llamastackoperator` | `Managed` | **`Removed`** |
+| `ogx` | `Managed` | `Managed` |
+
+**Symptom when both are Managed:** DSC shows `OGXReady=False` with a cryptic message like `no matches for kind "OGX"` / `Some modules are not ready: ogx`. Operator logs say the real cause:
+
+> `LlamaStackOperator is set to Managed; it has been deprecated, set it to Removed before enabling OGX`
+
+**Fix (cluster admin):**
+
+```bash
+oc patch datasciencecluster default-dsc --type=merge -p '{
+  "spec": {
+    "components": {
+      "llamastackoperator": { "managementState": "Removed" },
+      "ogx": { "managementState": "Managed" }
+    }
+  }
+}'
+```
+
+Wait until `OGXReady=True` / DSC `Ready` (`oc get dsc default-dsc -w`). Then Gen AI studio → **Playground** and **Add to playground** appear.
+
+**UI path:** Operators → Red Hat OpenShift AI → DataScienceCluster → `default-dsc` → YAML: set `llamastackoperator.managementState: Removed`, `ogx.managementState: Managed`.
 
 <a id="112-deploy"></a>
 
@@ -1082,7 +1123,18 @@ Docs (3.5): Gen AI studio / playground are often **Technology Preview** — need
 5. Enable **Add as AI asset endpoint** · use case **chat**
 6. Wait until deployment is **Ready**
 
-*(Exact model name + screenshots frozen after your first Ready deploy.)*
+**Frozen on this lab (sandbox, 1× L4):**
+
+| Field | Value |
+|-------|--------|
+| Catalog / model | `RedHatAI/granite-4.0-h-tiny-FP8-dynamic` |
+| Deployment / asset id | `redhat-granite-4.0-h-tiny-fp8` |
+| Use case | `chat` |
+| Status | **Ready** |
+
+Stop the workbench if the only GPU is already claimed (`Insufficient nvidia.com/gpu`) before deploying.
+
+![AI asset Ready + Add to playground](docs/screenshots/step11-ai-asset-ready.png)
 
 If Gen AI / GPU is missing on the sandbox, stop here and note it in the team sync — do not force a huge model.
 
@@ -1090,9 +1142,17 @@ If Gen AI / GPU is missing on the sandbox, stop here and note it in the team syn
 
 ## 11.2 Playground — Judge Muffin Court
 
-1. **Gen AI studio → Playground** (or AI asset endpoints → **Add to playground**)
-2. Select project + your generative endpoint
-3. Set system / prompt to something like:
+Requires **[11.0](#110-admin-ogx)** (`ogx: Managed` and `llamastackoperator: Removed`). If Playground is missing, check that conflict first.
+
+1. **AI asset endpoints** → **+ Add to playground** on your Ready chat model  
+2. **Configure playground:** Type = **Inference**, Max tokens ≈ **512** → **Create**  
+3. Wait for **Creating playground** to finish (can take a minute)
+
+![Creating playground](docs/screenshots/step11-creating-playground.png)
+
+4. Open **Gen AI studio → Playground** (left nav)  
+5. Select project **`chihuahua-vs-muffin-jan`** + model **`RedHatAI/granite-4.0-h-tiny-FP8-dynamic`**  
+6. Set system / prompt to something like:
 
 ```text
 You are Judge Muffin Court. Given a predictive result (label + confidence),
@@ -1102,7 +1162,7 @@ If the input is uncertain, OOD, tea cup, or "human review", rule:
 OUT OF ORDER / HUMAN REVIEW — do not force muffin or chihuahua.
 ```
 
-4. Try messages such as:
+7. Try messages such as:
    - `Prediction: muffin 0.97` → witty “guilty of being breakfast” style verdict  
    - `Prediction: uncertain (tea cup / low margin)` → **OUT OF ORDER / HUMAN REVIEW**
 
