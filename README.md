@@ -449,7 +449,8 @@ Source of truth: [RHODS 3.5 — Monitoring your AI systems (PDF)](https://docs.r
 
 1. Copy-paste each command block **in order**.
 2. Read **What we want** / **Why** / **Success looks like** before running anything.
-3. Only go to the next step when Success is met.
+3. After each command, compare your terminal to **Expected output** (pod names, ages, hosts, and requestIds will differ; the *shape* and key words must match).
+4. Only go to the next step when Success is met.
 
 | Constant | Value |
 |----------|--------|
@@ -507,6 +508,15 @@ TrustyAI is an optional platform component. If it is not **Managed**, creating a
 oc -n redhat-ods-applications get deploy trustyai-service-operator-controller-manager
 oc get dsc -A -o jsonpath='{range .items[*]}{.metadata.name}: {.spec.components.trustyai.managementState}{"\n"}{end}'
 ```
+
+**Expected output:**
+
+```text
+NAME                                           READY   UP-TO-DATE   AVAILABLE   AGE
+trustyai-service-operator-controller-manager   1/1     1            1           …
+default-dsc: Managed
+```
+
 
 *(Usually already true on the sandbox.)*
 
@@ -626,6 +636,22 @@ oc -n chihuahua-vs-muffin-jan get pods -l app=mariadb
 oc -n chihuahua-vs-muffin-jan get svc mariadb-service
 ```
 
+**Expected output:**
+
+```text
+Now using project "chihuahua-vs-muffin-jan" on server "https://api.…:6443".
+secret/mariadb-root created
+persistentvolumeclaim/mariadb-data created
+deployment.apps/mariadb created
+service/mariadb-service created
+deployment "mariadb" successfully rolled out
+NAME                       READY   STATUS    RESTARTS   AGE
+mariadb-…                  1/1     Running   0          …
+NAME              TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)    AGE
+mariadb-service   ClusterIP   172.30.…       <none>        3306/TCP   …
+```
+
+
 ---
 
 <a id="83"></a>
@@ -668,6 +694,15 @@ EOF
 
 oc -n chihuahua-vs-muffin-jan get secret trustyai-service-db-credentials
 ```
+
+**Expected output:**
+
+```text
+secret/trustyai-service-db-credentials created
+NAME                              TYPE     DATA   AGE
+trustyai-service-db-credentials   Opaque   7      0s
+```
+
 
 ---
 
@@ -713,6 +748,17 @@ oc -n chihuahua-vs-muffin-jan get pods | grep trustyai
 oc -n chihuahua-vs-muffin-jan get route trustyai-service
 ```
 
+**Expected output:**
+
+```text
+trustyaiservice.trustyai.opendatahub.io/trustyai-service created
+Ready ready=True
+trustyai-service-…             2/2     Running   0          …
+NAME               HOST/PORT                                                              …
+trustyai-service   trustyai-service-chihuahua-vs-muffin-jan.apps.…          …
+```
+
+
 ---
 
 <a id="85"></a>
@@ -743,6 +789,18 @@ This step is “make the camera cable work”.
 ```bash
 oc -n redhat-ods-applications get cm inferenceservice-config -o jsonpath='{.data.logger}{"\n"}'
 ```
+
+**Expected output:**
+
+```text
+{
+  "caBundle": "kserve-logger-ca-bundle",
+  "caCertFile": "service-ca.crt",
+  …
+  "tlsSkipVerify": true
+}
+```
+
 
 Need at least:
 
@@ -778,6 +836,18 @@ oc -n chihuahua-vs-muffin-jan get inferenceservice muffin-chihuahua \
   -o jsonpath='{.spec.predictor.logger}{"\n"}'
 ```
 
+**Expected output:**
+
+```text
+configmap/kserve-logger-ca-bundle created
+['service-ca.crt'] len= 1212
+{"mode":"all","url":"https://trustyai-service.chihuahua-vs-muffin-jan.svc.cluster.local"}
+
+# If the ConfigMap already existed: configured / unchanged is fine.
+# If logger is empty, wait for the TrustyAI operator to wire it, or check the ISVC again.
+```
+
+
 ---
 
 <a id="86"></a>
@@ -800,6 +870,16 @@ export TRUSTY_ROUTE=https://$(oc -n chihuahua-vs-muffin-jan get route/trustyai-s
 echo "TRUSTY_ROUTE=$TRUSTY_ROUTE"
 curl -sk -H "Authorization: Bearer $TOKEN" "$TRUSTY_ROUTE/info"; echo
 ```
+
+**Expected output:**
+
+```text
+TRUSTY_ROUTE=https://trustyai-service-chihuahua-vs-muffin-jan.apps.…
+{}
+
+# {} is OK here — auth works, no TRAINING/capture yet (or empty store).
+```
+
 
 ---
 
@@ -827,11 +907,31 @@ This step answers: *“Is the camera actually recording?”*
 
 **Workbench:** run [`notebooks/08b_trustyai_capture_json.ipynb`](notebooks/08b_trustyai_capture_json.ipynb)
 
+**Expected notebook output (example):**
+```text
+Sending 4 JSON inferences to http://muffin-chihuahua-predictor.…:9081
+….jpg 200 1.2s
+….jpg 200 0.9s
+…
+Done in …s
+Next on laptop: curl …
+```
+
 **Laptop:**
 
 ```bash
 curl -sk -H "Authorization: Bearer $TOKEN" "$TRUSTY_ROUTE/info"; echo
 ```
+
+**Expected output:**
+
+```text
+{"muffin-chihuahua":{"metrics":{…},"data":{…,"observations":1}}}
+
+# Must contain model id muffin-chihuahua and observations ≥ 1.
+# Pretty-print optional: … | python3 -m json.tool
+```
+
 
 ---
 
@@ -867,6 +967,16 @@ oc -n "$NS" exec deploy/mariadb -- \
   -e "SHOW COLUMNS FROM DataframeRow_Values LIKE 'serializableObject';"
 ```
 
+**Expected output:**
+
+```text
+Field               Type       Null  Key  Default  Extra
+serializableObject  longblob   YES              NULL
+
+# ALTER itself prints nothing on success.
+```
+
+
 ---
 
 <a id="89"></a>
@@ -895,13 +1005,27 @@ Validated path: build JSON on the workbench → copy to laptop → upload from *
 Run [`notebooks/08c_trustyai_training_upload.ipynb`](notebooks/08c_trustyai_training_upload.ipynb)  
 → files `/tmp/trustyai_training/train_0.json` … `train_3.json`
 
+**Expected notebook output (example):**
+```text
+Building 4 payloads in /tmp/trustyai_training
+[1/4] ….jpg infer :8888 …
+  wrote /tmp/trustyai_training/train_0.json (≈3000000 bytes)
+…
+done — files:
+  /tmp/trustyai_training/train_0.json …
+  /tmp/trustyai_training/train_3.json …
+```
+
 ### 9b — Laptop: copy out of the workbench
+
+The workbench pod is picked automatically (name from Step 3: `chihuahua-muffin`, or any Running pod matching `jupyter` / `workbench` / `notebook`).
 
 ```bash
 NS=chihuahua-vs-muffin-jan
-oc -n "$NS" get pods
-# Set WB to your workbench / jupyter pod name:
-WB="<workbench-pod-name>"
+WB=$(oc -n "$NS" get pods --field-selector=status.phase=Running -o name \
+  | grep -E 'jupyter|workbench|notebook|chihuahua-muffin' | head -1 | cut -d/ -f2)
+echo "WB=$WB"
+test -n "$WB" || { echo "No workbench pod found — is the workbench Running?"; exit 1; }
 
 oc -n "$NS" exec "$WB" -- ls -la /tmp/trustyai_training/
 
@@ -909,6 +1033,22 @@ rm -rf /tmp/trustyai_training && mkdir -p /tmp/trustyai_training
 oc -n "$NS" cp "$NS/$WB:/tmp/trustyai_training" /tmp/trustyai_training
 ls -la /tmp/trustyai_training/
 ```
+
+**Expected output:**
+
+```text
+WB=chihuahua-muffin-0
+# (exact name may differ — as long as WB=… is non-empty)
+
+total …
+-rw-r--r--  … train_0.json
+-rw-r--r--  … train_1.json
+-rw-r--r--  … train_2.json
+-rw-r--r--  … train_3.json
+
+# Each train_*.json is ~3 MiB.
+```
+
 
 ### 9c — Upload into TrustyAI pod
 
@@ -932,6 +1072,22 @@ export TOKEN=$(oc whoami -t)
 export TRUSTY_ROUTE=https://$(oc -n "$NS" get route/trustyai-service --template={{.spec.host}})
 curl -sk -H "Authorization: Bearer $TOKEN" "$TRUSTY_ROUTE/info/tags"; echo
 ```
+
+**Expected output:**
+
+```text
+TAI=trustyai-service-…
+=== upload train_0.json ===
+1 datapoints successfully added to muffin-chihuahua data.
+=== upload train_1.json ===
+1 datapoints successfully added to muffin-chihuahua data.
+=== upload train_2.json ===
+1 datapoints successfully added to muffin-chihuahua data.
+=== upload train_3.json ===
+1 datapoints successfully added to muffin-chihuahua data.
+{"muffin-chihuahua":{"TRAINING":4}}
+```
+
 
 ---
 
@@ -974,6 +1130,22 @@ echo
 curl -sk -H "Authorization: Bearer $TOKEN" "$TRUSTY_ROUTE/info" | python3 -m json.tool | head -50
 ```
 
+**Expected output:**
+
+```text
+Feature and output name mapping successfully applied.
+{
+  "muffin-chihuahua": {
+    …
+    "nameMapping": {"input": "image"},
+    …
+    "nameMapping": {"output-0": "chihuahua", "output-1": "muffin"},
+    "observations": 4
+  }
+}
+```
+
+
 ---
 
 <a id="811"></a>
@@ -1015,6 +1187,16 @@ curl -sk -H "Authorization: Bearer $TOKEN" -X POST \
 echo
 ```
 
+**Expected output:**
+
+```text
+{"requestId":"59404032-…","timestamp":"…"}
+{"timestamp":"…","type":"metric","namedValues":{"chihuahua":1.0,"muffin":1.0},"name":"MEANSHIFT",…}
+
+# Save requestId. With TRAINING-only data, p≈1.0 for both classes is normal.
+```
+
+
 ---
 
 <a id="812"></a>
@@ -1054,6 +1236,19 @@ EOF
 oc -n openshift-user-workload-monitoring get pods
 ```
 
+**Expected output:**
+
+```text
+configmap/cluster-monitoring-config created
+NAME                                   READY   STATUS    RESTARTS   AGE
+prometheus-user-workload-0             2/2     Running   0          …
+prometheus-operator-…                  2/2     Running   0          …
+thanos-ruler-user-workload-0           2/2     Running   0          …
+
+# Wait 1–2 min if pods are still ContainerCreating.
+```
+
+
 Optional — prove the metric exists in TrustyAI even before Observe:
 
 ```bash
@@ -1062,6 +1257,15 @@ TAI=$(oc -n "$NS" get pod -l app=trustyai-service -o jsonpath='{.items[0].metada
 oc -n "$NS" exec "$TAI" -c trustyai-service -- \
   curl -sS http://127.0.0.1:8080/q/metrics | grep trustyai_meanshift
 ```
+
+**Expected output:**
+
+```text
+# TYPE trustyai_meanshift gauge
+trustyai_meanshift{…model="muffin-chihuahua",request="…",subcategory="chihuahua"} 1.0
+trustyai_meanshift{…model="muffin-chihuahua",request="…",subcategory="muffin"} 1.0
+```
+
 
 ---
 
@@ -1093,6 +1297,8 @@ Or pin your job from step 11:
 trustyai_meanshift{request="<your-requestId-from-step-11>"}
 ```
 
+**Expected output (UI):** a chart with at least two series (`chihuahua`, `muffin`), values near **1.0** right after TRAINING-only. If you see **No datapoints found**, go back to §8.12 and wait until `prometheus-user-workload-0` is Ready.
+
 **How to read it with the room**
 
 | Value | Meaning |
@@ -1122,6 +1328,8 @@ TrustyAI still does **not** block requests. It only observes. (Blocking weak sin
 Observe curves drop after flood 1, then rise after flood 2 (wait 1–2 minutes between floods).
 
 **Workbench:** [`notebooks/09_trustyai_flood.ipynb`](notebooks/09_trustyai_flood.ipynb)
+
+**Expected notebook output:** lines like `noise 200`, `muffin/….jpg 200`, `chihuahua/….jpg 200` (HTTP 200 per image).
 
 | Order | Flood | Expect in Observe |
 |-------|--------|-------------------|
@@ -1162,12 +1370,34 @@ Also remove MariaDB if you used the DATABASE path:
 oc -n chihuahua-vs-muffin-jan delete deploy/mariadb svc/mariadb-service pvc/mariadb-data secret/mariadb-root secret/trustyai-service-db-credentials --ignore-not-found
 ```
 
+**Expected output:**
+
+```text
+deployment.apps "mariadb" deleted
+service "mariadb-service" deleted
+persistentvolumeclaim "mariadb-data" deleted
+secret "mariadb-root" deleted
+secret "trustyai-service-db-credentials" deleted
+
+# ignore-not-found may print nothing for missing objects.
+```
+
+
 ```bash
 export NS=chihuahua-vs-muffin-jan
 bash scripts/trustyai_reset.sh
 # or
 bash scripts/trustyai_uninstall.sh
 ```
+
+**Expected output:**
+
+```text
+# Soft reset: clears TrustyAI data; service stays.
+# Full uninstall: removes TrustyAIService, logger, CA, …
+# Then restart from §8.1 (and §8.2 MariaDB if fully removed).
+```
+
 
 Then colleagues start again at **§8.1**.
 
