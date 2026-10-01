@@ -1,6 +1,6 @@
 # Chihuahua vs Muffin — OpenShift AI lab
 
-Lab on **OpenShift AI 3.5**: S3 → train → serve → guardrails → TrustyAI → pipelines → AutoML → Gen AI.
+Lab on **OpenShift AI 3.5**: S3 → train → serve → guardrails → TrustyAI → pipelines → AutoML → Gen AI → protect (Authorino + Limitador).
 
 | | |
 |--|--|
@@ -25,13 +25,16 @@ Lab on **OpenShift AI 3.5**: S3 → train → serve → guardrails → TrustyAI 
 | 8 | [TrustyAI](#step-8) | ✅ |
 | 9 | [Pipelines](#step-9) | ✅ |
 | 10 | [AutoML](#step-10) | ✅ |
-| 11 | [Gen AI — Muffin Court](#step-11) | ⬜ |
+| 11 | [Gen AI — Muffin Court](#step-11) | ✅ |
+| 12 | [Protect endpoint (Authorino + Limitador)](#step-12) | ⬜ |
+| B | [People Policy Concierge — Agentic RAG (country HR)](docs/PEOPLE_POLICY_AGENT_LAB.md) | ⬜ |
 
-Jump: [0](#step-0) · [1](#step-1) · [2](#step-2) · [3](#step-3) · [4](#step-4) · [5](#step-5) · [6](#step-6) · [7](#step-7) · [8](#step-8) · [9](#step-9) · [10](#step-10) · [11](#step-11)  
+Jump: [0](#step-0) · [1](#step-1) · [2](#step-2) · [3](#step-3) · [4](#step-4) · [5](#step-5) · [6](#step-6) · [7](#step-7) · [8](#step-8) · [9](#step-9) · [10](#step-10) · [11](#step-11) · [12](#step-12) · [Agentic RAG lab](docs/PEOPLE_POLICY_AGENT_LAB.md)  
 Step 8: [8.1](#81-install) · [8.2](#82-names) · [8.3](#83-training) · [8.4](#84-read) · [8.5](#85-observe) · [8.6](#86-flood) · [8.7](#87-reset)  
 Step 9: [9.1](#91-configure) · [9.2 smoke](#92-smoke) · [9.3](#93-out)  
 Step 10: [10.1](#101-data) · [10.2](#102-run) · [10.3](#103-read)  
-Step 11: [why](#111-why) · [11.0](#110-admin-ogx) · [11.1](#112-deploy) · [11.2](#113-playground)
+Step 11: [why](#111-why) · [11.0](#110-admin-ogx) · [11.1](#112-deploy) · [11.2](#113-playground)  
+Step 12: [12.0](#120-map) · [12.A](#12a-authorino) · [12.B](#12b-limitador) · [12.C](#12c-cleanup)
 
 ---
 
@@ -95,7 +98,8 @@ spec:
     spec:
       containers:
         - name: minio
-          image: quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z
+          # quay.io/minio/* anonymous pulls are blocked (401); use Silo (MinIO-compatible fork)
+          image: docker.io/pgsty/silo:latest
           args: [server, /data, --console-address, ":9001"]
           env:
             - name: MINIO_ROOT_USER
@@ -141,8 +145,8 @@ mc mb lab/"$BUCKET" --insecure
 
 | | |
 |--|--|
-| API | `https://minio-api-lab-minio.apps.ocp.dv6rj.sandbox1011.opentlc.com` |
-| Console | `https://minio-console-lab-minio.apps.ocp.dv6rj.sandbox1011.opentlc.com` |
+| API | `https://minio-api-lab-minio.apps.ocp.lcdkt.sandbox1045.opentlc.com` |
+| Console | `https://minio-console-lab-minio.apps.ocp.lcdkt.sandbox1045.opentlc.com` |
 | In-cluster | `http://minio.lab-minio.svc.cluster.local:9000` |
 | Auth | `minio` / `minio123` |
 | Bucket | `muffin-chihuahua` |
@@ -1173,3 +1177,236 @@ OUT OF ORDER / HUMAN REVIEW — do not force muffin or chihuahua.
 - Replacing OVMS with the LLM for image classification  
 - Serving the Step 10 AutoML model as the judge  
 - Production RAG / AutoRAG (optional later)
+
+---
+
+<a id="step-12"></a>
+
+# Step 12 — Protect the endpoint (Authorino + Limitador)
+
+<a id="120-map"></a>
+
+## Why this step (plain language — SA view)
+
+Until now the OVMS route was **open**: anyone who knows the URL can call the model.  
+Customers ask two questions next:
+
+1. **Who** is allowed to call? → **Authorino** (token auth)  
+2. **How many** calls are allowed? → **Limitador** (rate limit)
+
+You do **not** rewrite OVMS. You put a door (auth) and a traffic cop (rate limit) in front.
+
+| Layer | Job | Lab step |
+|-------|-----|----------|
+| Confidence / margin | Soft “uncertain” in the notebook | Step 7 |
+| TrustyAI | Drift / OOD monitoring | Step 8 |
+| **Authorino** | Reject callers without a valid token (**401**) | **12.A** |
+| **Limitador** | Reject bursts over the limit (**429**) | **12.B** |
+| Gen AI Playground | LLM “verdict” text | Step 11 |
+
+**One-liner:** OVMS still classifies; Authorino decides *who*; Limitador decides *how often*.
+
+### Path C (this lab)
+
+1. **12.A** — Token auth on existing `muffin-chihuahua` (Standard / RawDeployment)  
+2. **12.B** — Install Connectivity Link + Limitador, demo **429** on burst  
+
+Cluster notes (sandbox validated): Authorino **Operator** is already present; Connectivity Link / Limitador are **not** until 12.B.
+
+<a id="12a-authorino"></a>
+
+## 12.A — Authorino: require a token
+
+### Baseline (before auth)
+
+Route should answer **200** without a token (auth still off):
+
+```bash
+NS=chihuahua-vs-muffin-jan
+HOST=$(oc -n "$NS" get route muffin-chihuahua -o jsonpath='{.spec.host}')
+curl -sk -o /dev/null -w 'http=%{http_code}\n' "https://${HOST}/v2/models/muffin-chihuahua"
+# expect: http=200
+```
+
+### Enable token authentication
+
+**UI (preferred for demos):**
+
+1. OpenShift AI → project **`chihuahua-vs-muffin-jan`** → **Deployments** → **`muffin-chihuahua`**  
+2. Edit / redeploy options → enable **Require token authentication**  
+3. Service account name: **`muffin-infer-user`** (created if missing)  
+4. Save → wait until deployment is **Ready** again  
+
+**CLI equivalent:**
+
+```bash
+NS=chihuahua-vs-muffin-jan
+
+# ServiceAccount that is allowed to call the model
+oc -n "$NS" create sa muffin-infer-user --dry-run=client -o yaml | oc apply -f -
+
+# Bind: SA can GET this InferenceService (RHOAI auth check)
+oc -n "$NS" create role muffin-infer-user-isvc \
+  --verb=get --resource=inferenceservices.serving.kserve.io \
+  --dry-run=client -o yaml | oc apply -f -
+oc -n "$NS" create rolebinding muffin-infer-user-isvc \
+  --role=muffin-infer-user-isvc --serviceaccount="${NS}:muffin-infer-user" \
+  --dry-run=client -o yaml | oc apply -f -
+
+# Turn auth on
+oc -n "$NS" annotate inferenceservice muffin-chihuahua \
+  security.opendatahub.io/enable-auth=true --overwrite
+```
+
+Wait until `muffin-chihuahua` is Ready. Then inspect what appeared (Authorino / AuthConfig / secrets — names vary by RHOAI build):
+
+```bash
+oc -n "$NS" get authconfig,sa,secret,role,rolebinding | grep -iE 'muffin|auth|authorino' || true
+oc -n "$NS" get inferenceservice muffin-chihuahua -o jsonpath='{.metadata.annotations.security\.opendatahub\.io/enable-auth}{"\n"}'
+```
+
+### Curl matrix (freeze these codes)
+
+```bash
+NS=chihuahua-vs-muffin-jan
+HOST=$(oc -n "$NS" get route muffin-chihuahua -o jsonpath='{.spec.host}')
+URL="https://${HOST}/v2/models/muffin-chihuahua"
+
+# 1) No token → expect 401
+curl -sk -o /dev/null -w 'no_token=%{http_code}\n' "$URL"
+
+# 2) Bad token → expect 401
+curl -sk -o /dev/null -w 'bad_token=%{http_code}\n' \
+  -H 'Authorization: Bearer not-a-real-token' "$URL"
+
+# 3) Valid SA token → expect 200
+TOKEN=$(oc create token muffin-infer-user -n "$NS" --duration=1h)
+curl -sk -o /dev/null -w 'ok_token=%{http_code}\n' \
+  -H "Authorization: Bearer ${TOKEN}" "$URL"
+```
+
+| Call | Expected |
+|------|----------|
+| No `Authorization` | **401** |
+| Bad Bearer | **401** |
+| SA token (`muffin-infer-user`) | **200** |
+
+Dashboard: Deployments → expand model → **Token authentication** / token secret (copy for demos).
+
+### TrustyAI check after auth
+
+Enabling auth must not silently kill the logger.
+
+```bash
+# TrustyAI still up?
+oc -n "$NS" get trustyaiservice 2>/dev/null
+oc -n "$NS" get pods | grep -i trustyai || echo 'no TrustyAI pod (OK if uninstalled)'
+
+# If TrustyAI is installed: /info should still list the model after a few authenticated infer calls
+```
+
+If the agent stops receiving payloads: give the logger path a valid identity, or keep internal cluster traffic on the predictor Service (document what you fixed). Do **not** leave monitoring broken for the next SA.
+
+### Teaching point
+
+On **Standard / RawDeployment** (this lab), RHOAI enforces token auth with a **`kube-rbac-proxy`** sidecar on the predictor pod. It checks a Kubernetes JWT and a **SubjectAccessReview** (`get` on this InferenceService). The **Authorino Operator** is installed on the cluster; classic **AuthConfig** wiring is the Serverless / Connectivity Link story (see 12.B). Same customer outcome: **no ticket → 401**.
+
+**Validated on this sandbox:**
+
+| Call | HTTP |
+|------|------|
+| No `Authorization` | **401** `Unauthorized` |
+| Bad Bearer | **401** |
+| `oc create token muffin-infer-user` | **200** model metadata |
+| `oc whoami -t` (admin) | **200** |
+
+```bash
+# Inspect the SAR config the proxy uses
+oc -n chihuahua-vs-muffin-jan get cm muffin-chihuahua-kube-rbac-proxy-sar-config -o yaml
+oc -n chihuahua-vs-muffin-jan get pods -l serving.kserve.io/inferenceservice=muffin-chihuahua \
+  -o jsonpath='{range .items[*]}{.metadata.name}{" → "}{range .spec.containers[*]}{.name}{" "}{end}{"\n"}{end}'
+# expect: kserve-container kube-rbac-proxy
+```
+
+**One-liner:** OVMS still classifies; the proxy decides *who* may call.
+
+<a id="12b-limitador"></a>
+
+## 12.B — Limitador: rate limit (Connectivity Link)
+
+### Why another component?
+
+A stolen or shared token can still **flood** a GPU. Limitador counts requests in a time window and returns **429 Too Many Requests** when over the limit.
+
+On this sandbox, **Red Hat Connectivity Link** was **not** installed at lab start (`KserveLLMInferenceServiceDependencies` → *Connectivity Link not installed*). Part B installs it, then applies a rate-limit policy in front of the model path.
+
+### Admin install (cluster-admin)
+
+OperatorHub packages (validated on marketplace): `rhcl-operator`, `limitador-operator`.
+
+```bash
+# Install operators (UI: Ecosystem → OperatorHub → Red Hat Connectivity Link + Limitador)
+# Or Subscriptions — exact channel/CSV frozen after first successful install on this cluster.
+
+oc get csv -A | grep -iE 'rhcl|kuadrant|limitador|connectivity' || echo 'not installed yet'
+oc get packagemanifests -n openshift-marketplace | grep -iE 'rhcl|limitador|kuadrant'
+```
+
+Follow [RHOAI 3.5 Connectivity Link / auth docs](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5) for Gateway + Authorino listener TLS if required. Restart model controllers after RHCL if docs say so:
+
+```bash
+# Only if docs require (after RHCL first install):
+# oc delete pod -n redhat-ods-applications -l app=odh-model-controller
+# oc delete pod -n redhat-ods-applications -l control-plane=kserve-controller-manager
+```
+
+### Rate-limit policy (shape)
+
+Exact CR names (`RateLimitPolicy` / `TokenRateLimitPolicy` / HTTPRoute target) **freeze after first working apply** on this cluster. Intent:
+
+| Under limit | **200** + inference |
+| Over limit (burst script) | **429** |
+
+Example burst check (adjust URL / header once policy is live):
+
+```bash
+NS=chihuahua-vs-muffin-jan
+HOST=$(oc -n "$NS" get route muffin-chihuahua -o jsonpath='{.spec.host}')
+TOKEN=$(oc create token muffin-infer-user -n "$NS" --duration=1h)
+URL="https://${HOST}/v2/models/muffin-chihuahua"
+
+for i in $(seq 1 30); do
+  code=$(curl -sk -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${TOKEN}" "$URL")
+  echo "$i $code"
+done
+# Expect a mix of 200 then 429 once the window limit is hit
+```
+
+### Teaching point
+
+**Limitador is the traffic cop.** Valid token ≠ unlimited traffic.
+
+*(Policy YAML + screenshots frozen after Part B play.)*
+
+<a id="12c-cleanup"></a>
+
+## 12.C — Cleanup / replay
+
+**Soft (keep operators):**
+
+```bash
+NS=chihuahua-vs-muffin-jan
+# Turn auth back off for open demos
+oc -n "$NS" annotate inferenceservice muffin-chihuahua \
+  security.opendatahub.io/enable-auth=false --overwrite
+# Delete rate-limit / Auth policies created in 12.B (names frozen later)
+```
+
+**Full:** uninstall Connectivity Link / Limitador Subscriptions only if the next team does not need them; leave Authorino Operator (often shared with RHOAI).
+
+## 12.D Out of scope
+
+- Enterprise OIDC / Keycloak deep-dive  
+- mTLS between mesh sidecars as the primary story  
+- Multi-tenant quota design  
+- Replacing Step 7 confidence logic with Authorino
