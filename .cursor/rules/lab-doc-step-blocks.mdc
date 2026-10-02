@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Lab documentation step blocks
 
-Whenever you **add or expand** a step in project docs (`README.md`, `docs/**/*.md`, lab guides), structure it with these four sections — in this order:
+Whenever you **add or expand** a step in project docs (`README.md`, `README-PREDICTIVE.md`, `README-GENAI.md`, `docs/**/*.md`, lab guides), structure it with these four sections — in this order:
 
 ### What we want
 One or two sentences: the concrete outcome for the reader (not the command).
@@ -23,7 +23,7 @@ After each command block, add **Expected output** (` ```text `) with the shape o
 ## Rules
 
 - Do not dump bare commands without the four headings.
-- Match the tone of Step 8 in `README.md` (facilitator-friendly, room-readable).
+- Match the tone of Step 8 in `README-PREDICTIVE.md` (facilitator-friendly, room-readable).
 - Keep **How** as the only place for long YAML/scripts; keep What/Why short.
 - When editing an existing step that already has What/Why/Success, add **How** if commands were left floating under Success.
 - Tiny one-liners (e.g. a single verify) can stay compact, but still use the four headings if it is a new numbered step (§x.y).

@@ -1,0 +1,29 @@
+---
+description: RHOAI 3.5 official docs override assumptions (OGX, RAG, AutoML, MLflow, AutoRAG, MCP)
+alwaysApply: true
+---
+
+# RHOAI 3.5 — official docs are source of truth
+
+For lab work on **OpenShift AI 3.5**, the Red Hat docs below **win** over assumptions, memory, blogs, and conflicting repo text.
+
+## Source of truth by topic
+
+| Topic | Doc (3.5 html-single) |
+|-------|------------------------|
+| **OGX** (agentic, security, migration from Llama Stack) | https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/working_with_ogx/index |
+| **RAG with OGX** | https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/building_rag_applications_with_ogx/index |
+| **AutoML** | https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/working_with_automl/index |
+| **MLflow** | https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/working_with_mlflow/index |
+| **AutoRAG** | https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/working_with_autorag/index |
+| **MCP catalog** | https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/working_with_the_mcp_catalog/index |
+
+Local uploads under the Cursor project `uploads/` (when present) may mirror these pages — use them, but the URLs above remain canonical.
+
+## Rules
+
+- **Before** writing steps, code, YAML, or advice on these topics: open/fetch the matching doc section. Do not invent UI paths, CRDs, feature flags, or APIs from memory.
+- If README / notebooks disagree with these docs → **docs win**; update the lab or state the conflict explicitly.
+- If a detail is missing from the official doc → say so; do not present guesses as fact.
+- Prefer current **3.5 / OGX** wording over legacy names when the docs say to migrate.
+- Lab doc structure (What / Why / Success / How) still applies when documenting these features.

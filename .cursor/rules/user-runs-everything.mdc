@@ -1,0 +1,24 @@
+---
+description: Never modify the cluster or apply changes — user does all actions
+alwaysApply: true
+---
+
+# Hands-off cluster and lab actions
+
+**You (the agent) never change the live environment.** The user runs every command and every UI click.
+
+## Do not
+
+- Run `oc apply`, `oc patch`, `oc delete`, `oc create`, `oc replace`, `oc edit`, `oc scale`, `oc rollout`, `oc adm`, `kubectl` mutating calls, `mc mb` / `mc cp` / `mc rm`, or any write to the cluster / MinIO / registries
+- Enable feature flags, restart pods, import pipelines, or “fix” by applying YAML yourself
+- Commit / push / amend unless the user explicitly asks in that message
+
+## Do
+
+- Diagnose with **read-only** checks when useful (`oc get`, `oc describe`, `oc logs`, `oc explain`) — or ask the user to paste output
+- Give **copy-paste** command blocks and **exact UI click paths** for the user to run
+- Update **repo docs / scripts** only when the user asks for documentation or code changes
+
+## Precedence
+
+This rule overrides any urge to “just fix it on the cluster.” If something is broken, explain and hand the user the fix — do not apply it.

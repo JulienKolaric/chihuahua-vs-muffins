@@ -1,7 +1,7 @@
-# TrustyAI DATABASE path — moved
+# TrustyAI DATABASE install (pointer)
 
-The copy-paste guide lives in the lab README:
+The copy-paste guide lives in the **predictive** lab README:
 
-**[README.md — Step 8 TrustyAI](../../README.md#step-8)**
+**[README-PREDICTIVE.md — Step 8 TrustyAI](../../README-PREDICTIVE.md#step-8)**
 
-This folder is kept only as a pointer so old links still resolve.
+Hub: [README.md](../../README.md)
