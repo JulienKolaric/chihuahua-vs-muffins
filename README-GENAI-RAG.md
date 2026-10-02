@@ -675,16 +675,36 @@ The notebook is for builders. End users open a Route. R6 (`hotline-kb-chat`) sea
 
 ### How
 
-**Prerequisite:** [R7](#r7) notebook completed successfully — you have a `vector_store_id` (`vs_…`). That notebook step is the **validation gate before** this app.
+**Prerequisite:** [R7](#r7) notebook completed successfully — a `vector_store_id` (`vs_…`) exists on your OGX. That notebook step is the **validation gate before** this app.
 
-#### 1) Deploy (from repo root)
-
-Replace `vs_PASTE_FROM_NOTEBOOK` with your id from the notebook.
+#### 0) Get `VECTOR_STORE_ID` from the shell (no notebook copy-paste)
 
 ```bash
 NS=genai-hotline
-VS_ID='vs_PASTE_FROM_NOTEBOOK'
 
+# List all vector stores on your dedicated OGX
+oc -n "$NS" exec deploy/hotline-rag-ogx -- \
+  curl -sS http://127.0.0.1:8321/v1/vector_stores | python3 -m json.tool
+
+# Pick the newest "hotline-kb-pgvector" id into VS_ID
+VS_ID=$(oc -n "$NS" exec deploy/hotline-rag-ogx -- \
+  curl -sS http://127.0.0.1:8321/v1/vector_stores \
+  | python3 -c '
+import json,sys
+data=json.load(sys.stdin).get("data") or []
+hits=[v for v in data if v.get("name")=="hotline-kb-pgvector"]
+hits=sorted(hits, key=lambda v: v.get("created_at") or 0, reverse=True)
+print(hits[0]["id"] if hits else "")
+')
+echo "VS_ID=$VS_ID"
+test -n "$VS_ID" || { echo "No vector store — re-run the R7 notebook ingest cells."; exit 1; }
+```
+
+#### 1) Deploy (from repo root)
+
+Reuse `NS` / `VS_ID` from step 0 (or re-run that block).
+
+```bash
 oc -n "$NS" delete all,bc,is,route -l app=hotline-rag-chat --ignore-not-found
 oc -n "$NS" delete deploy/hotline-rag-chat svc/hotline-rag-chat route/hotline-rag-chat \
   bc/hotline-rag-chat is/hotline-rag-chat --ignore-not-found
