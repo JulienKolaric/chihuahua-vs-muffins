@@ -35,6 +35,8 @@ Gen AI studio / Playground are often **Technology Preview** — need admin enabl
 | G5 | [Playground — Hotline (simplest)](#g5) | ✅ |
 | G6 | [Out of scope](#g6) | |
 
+RAG continuation: **[`README-GENAI-RAG.md`](README-GENAI-RAG.md)** (Hotline KB → Playground Knowledge → AutoRAG later).
+
 ---
 
 <a id="g0"></a>
@@ -496,6 +498,33 @@ Requires [G1](#g1) (`genAiStudio: true`) and Ready AI asset from [G2](#g2).
 
 ![Creating playground](docs/screenshots/step-genai-creating-playground.png)
 
+**Side effect (important for RAG):** activating / creating the Playground also instantiates a **PostgreSQL + pgvector** Deployment in the project:
+
+| Object | Name (this sandbox) |
+|--------|---------------------|
+| `OGXServer` | `lsd-genai-playground` |
+| Vector DB Deployment | **`genai-pgvector`** (label `gen-ai.opendatahub.io/pgvector=true`, owned by that `OGXServer`) |
+| Service | `genai-pgvector` → port `5432` |
+
+Verify:
+
+```bash
+oc -n genai-hotline get deploy,svc,pvc | grep -i pgvector
+oc -n genai-hotline get ogxserver
+```
+
+**Expected output (shape)**
+
+```text
+deployment.apps/genai-pgvector   1/1
+service/genai-pgvector           ... 5432/TCP
+persistentvolumeclaim/genai-pgvector-storage   Bound
+NAME                    ...
+lsd-genai-playground
+```
+
+You did **not** apply this YAML by hand — Gen AI studio created it with the Playground. You reuse it in [`README-GENAI-RAG.md`](README-GENAI-RAG.md) when uploading Knowledge.
+
 6. **Gen AI studio → Playground** → project **`genai-hotline`**
 7. **Settings** → **Prompt** → paste the [shared Hotline system prompt](#g2)  
    **Model** → Temperature ≈ **0.1**, Streaming **On**
@@ -524,7 +553,7 @@ oc -n genai-hotline delete route,svc,deploy,cm,bc,is -l app=hotline-chat --ignor
 # G6 — Out of scope (this Gen AI lab)
 
 - Using the LLM to classify muffin/chihuahua **images** (that is OVMS in [README-PREDICTIVE.md](README-PREDICTIVE.md))
-- RAG / AutoRAG / MCP (see official RHOAI 3.5 docs — pick a new use case later)
+- Full **RAG / AutoRAG / MCP** app builds → start with **[`README-GENAI-RAG.md`](README-GENAI-RAG.md)** then AutoRAG
 - Production auth / rate limits on the LLM route (out of scope for this lab)
 
 ---
