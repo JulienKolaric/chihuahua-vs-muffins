@@ -1,9 +1,10 @@
 # Dedicated OGXServer for Hotline RAG — separate from Playground (lsd-genai-playground).
-# Schema matches the live CRD on RHOAI 3.5 (distribution + workload.overrides.env).
-# Enables remote pgvector per:
-# https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/working_with_ogx/select-and-deploy-a-vector-database_rag
+# Uses overrideConfig so inline sentence-transformers (embeddings) are registered —
+# env-only ENABLE_PGVECTOR alone does not expose an embedding model (needed for ingest).
 #
-# Apply: oc apply -f manifests/hotline-rag/03-ogxserver.yaml -n genai-hotline
+# Apply order: 01 → 02 → 04 → 03
+#   oc apply -f manifests/hotline-rag/04-ogx-config.yaml -n genai-hotline
+#   oc apply -f manifests/hotline-rag/03-ogxserver.yaml -n genai-hotline
 ---
 apiVersion: ogx.io/v1beta1
 kind: OGXServer
@@ -16,6 +17,9 @@ spec:
     name: rh-dev
   network:
     port: 8321
+  overrideConfig:
+    name: hotline-rag-ogx-config
+    key: config.yaml
   workload:
     replicas: 1
     resources:
@@ -27,7 +31,6 @@ spec:
         memory: 12Gi
     overrides:
       env:
-        # LLM (existing Granite vLLM in this project)
         - name: INFERENCE_MODEL
           valueFrom:
             secretKeyRef:
@@ -53,7 +56,6 @@ spec:
             secretKeyRef:
               name: hotline-rag-ogx-llm
               key: VLLM_MAX_TOKENS
-        # PostgreSQL metadata store (same instance as vectors for this lab)
         - name: POSTGRES_HOST
           value: hotline-rag-pgvector
         - name: POSTGRES_PORT
@@ -67,7 +69,6 @@ spec:
             secretKeyRef:
               name: hotline-rag-pg-credentials
               key: POSTGRES_PASSWORD
-        # Remote pgvector provider (required — not automatic)
         - name: ENABLE_PGVECTOR
           value: "true"
         - name: PGVECTOR_HOST
@@ -95,3 +96,12 @@ spec:
             secretKeyRef:
               name: hotline-rag-pgvector-connection
               key: PGVECTOR_PASSWORD
+        # Embedding model weights ship in the OGX image (same as Playground)
+        - name: HF_HUB_OFFLINE
+          value: "1"
+        - name: TRANSFORMERS_OFFLINE
+          value: "1"
+        - name: HF_DATASETS_OFFLINE
+          value: "1"
+        - name: SENTENCE_TRANSFORMERS_HOME
+          value: /opt/app-root/.cache/huggingface/hub

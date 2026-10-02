@@ -12,7 +12,8 @@ PostgreSQL alone stores text and tables. **pgvector** is an extension that store
 
 1. [`01-postgres-pgvector.yaml`](01-postgres-pgvector.yaml) — deploy Postgres, PVC, Service; init script runs `CREATE EXTENSION IF NOT EXISTS vector;`
 2. [`02-secrets.yaml`](02-secrets.yaml) — connection details for OGX + link to Granite
-3. [`03-ogxserver.yaml`](03-ogxserver.yaml) — `ENABLE_PGVECTOR=true` and `PGVECTOR_*` pointing at **this** Service (not Playground)
+3. [`04-ogx-config.yaml`](04-ogx-config.yaml) — OGX `config.yaml` with **embeddings** + LLM + pgvector (without this, `/v1/models` only shows the LLM)
+4. [`03-ogxserver.yaml`](03-ogxserver.yaml) — `OGXServer` with `overrideConfig` → that ConfigMap
 
 Ingest is not in the YAML: the notebook uploads files so OGX chunks, embeds, and writes into that database.
 
@@ -22,7 +23,8 @@ Ingest is not in the YAML: the notebook uploads files so OGX chunks, embeds, and
 |------|---------|------|
 | [`01-postgres-pgvector.yaml`](01-postgres-pgvector.yaml) | Secret, ConfigMap init, PVC, Deployment `hotline-rag-pgvector`, Service | PostgreSQL 16 + `vector` extension — store embeddings |
 | [`02-secrets.yaml`](02-secrets.yaml) | `hotline-rag-pgvector-connection`, `hotline-rag-ogx-llm` | DB connection for OGX · link to existing Granite vLLM |
-| [`03-ogxserver.yaml`](03-ogxserver.yaml) | `OGXServer` `hotline-rag-ogx` | API ingest / `file_search` / chat with retrieval (`ENABLE_PGVECTOR=true`) |
+| [`03-ogxserver.yaml`](03-ogxserver.yaml) | `OGXServer` `hotline-rag-ogx` | API ingest / `file_search` (uses overrideConfig) |
+| [`04-ogx-config.yaml`](04-ogx-config.yaml) | ConfigMap `hotline-rag-ogx-config` | Registers **embedding** (`sentence-transformers`) + LLM + pgvector |
 
 Ingest + query: [`notebooks/14_hotline_ogx_pgvector.ipynb`](../../notebooks/14_hotline_ogx_pgvector.ipynb) → Service `hotline-rag-ogx-service:8321`.
 

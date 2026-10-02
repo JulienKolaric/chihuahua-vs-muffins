@@ -572,21 +572,29 @@ Lab image note: official doc example uses `pgvector/pgvector:pg16`. These manife
 
 If you already started the pod once and saw `permission denied to create extension "vector"`, the data directory may already exist: either run the one-shot fix below, or delete the PVC and recreate so init scripts run again.
 
-#### 2) Secrets + dedicated OGXServer
+#### 2) Secrets + OGX config + dedicated OGXServer
 
-**What this step does:** gives OGX the DB password/host and the Granite URL, then creates `OGXServer/hotline-rag-ogx` with `ENABLE_PGVECTOR=true` so ingest/query APIs use **your** database.
+**What this step does:** gives OGX the DB password/host and the Granite URL, installs a ConfigMap that registers an **embedding** model (inline sentence-transformers — required to index docs into pgvector), then creates `OGXServer/hotline-rag-ogx` with `overrideConfig` pointing at that ConfigMap.
+
 ```bash
 NS=genai-hotline
 
 oc -n "$NS" apply -f manifests/hotline-rag/02-secrets.yaml
+oc -n "$NS" apply -f manifests/hotline-rag/04-ogx-config.yaml
 oc -n "$NS" apply -f manifests/hotline-rag/03-ogxserver.yaml
 
 oc -n "$NS" get ogxserver hotline-rag-ogx -w
 # Ctrl-C when PHASE shows Ready (or status.conditions DeploymentReady=True)
 
-oc -n "$NS" get svc,pods -l app=hotline-rag
 oc -n "$NS" get svc | grep hotline-rag-ogx
 oc -n "$NS" logs -l app.kubernetes.io/instance=hotline-rag-ogx --tail=40
+```
+
+**Check embeddings are visible** (must list an `embedding` model, not only `llm`):
+
+```bash
+oc -n genai-hotline exec deploy/hotline-rag-ogx -- \
+  curl -sS http://127.0.0.1:8321/v1/models
 ```
 
 **Expected output (shape)**
@@ -594,7 +602,8 @@ oc -n "$NS" logs -l app.kubernetes.io/instance=hotline-rag-ogx --tail=40
 ```text
 ogxserver.ogx.io/hotline-rag-ogx   Ready
 service/hotline-rag-ogx-service    8321/TCP
-… Listening on …:8321 …
+… "model_type":"embedding" … granite-embedding …
+… "model_type":"llm" …
 ```
 
 If the Service name differs slightly, take the one created for `hotline-rag-ogx` and put it in the notebook `OGX=` URL.
