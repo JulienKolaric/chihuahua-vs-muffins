@@ -667,6 +667,8 @@ Give callers a normal chat URL. Behind it: **your** OGX searches **your** pgvect
 ### Why
 The notebook is for builders. End users open a Route. R6 (`hotline-kb-chat`) searched a ConfigMap; this app searches the database you installed in R7.
 
+**Where the Hotline prompt lives:** hard-coded in the Streamlit app — [`apps/hotline_rag_chat/app.py`](apps/hotline_rag_chat/app.py) as `SYSTEM`, sent on every call as OGX `instructions` (not Playground Settings, not the ConfigMap, not pgvector). pgvector holds **runbook text**; the app holds **how to answer** (HIT/MISS rules).
+
 ### Success looks like
 - Route `hotline-rag-chat` opens **Hotline 0800-HELP — RAG**
 - Sidebar shows `OGX_URL` + `VECTOR_STORE_ID`
@@ -755,7 +757,7 @@ oc -n genai-hotline rollout status deploy/hotline-rag-chat --timeout=180s
 oc -n genai-hotline start-build hotline-rag-chat --from-dir=apps/hotline_rag_chat --follow
 ```
 
-**Teaching point:** R6 = small KB in ConfigMap · R7 notebook = prove pgvector · R8 = same search for real users on a Route.
+**Teaching point:** R6 = small KB in ConfigMap · R7 notebook = prove pgvector · R8 = same search for real users on a Route. Prompt = code in `app.py` (`SYSTEM` → OGX `instructions`); knowledge = chunks in pgvector.
 
 ---
 
