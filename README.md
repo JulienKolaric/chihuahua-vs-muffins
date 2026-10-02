@@ -4,8 +4,8 @@ Hands-on labs on **one cluster / one team**. Two independent journeys (plus opti
 
 | Lab | File | What you practice |
 |-----|------|-------------------|
-| **Predictive** — Chihuahua vs Muffin | [`README-PREDICTIVE.md`](README-PREDICTIVE.md) | S3 → train → **OVMS** → guardrails → **TrustyAI** → pipelines → **AutoML** → protect (Authorino + Limitador) |
-| **Gen AI** — Playground / OGX | [`README-GENAI.md`](README-GENAI.md) | Deploy a chat LLM + **Playground** demo (**Hotline 0800-HELP**) — *not* image classification |
+| **Predictive** — Chihuahua vs Muffin | [`README-PREDICTIVE.md`](README-PREDICTIVE.md) | S3 → train → **OVMS** → guardrails → **TrustyAI** → pipelines → **AutoML** |
+| **Gen AI** — Playground / OGX | [`README-GENAI.md`](README-GENAI.md) | Project **`genai-hotline`** · chat LLM + Playground (**Hotline 0800-HELP**) |
 
 | | Predictive | Gen AI |
 |--|------------|--------|
@@ -19,8 +19,8 @@ Hands-on labs on **one cluster / one team**. Two independent journeys (plus opti
 
 | Lab | File |
 |-----|------|
-| People Policy — Agentic RAG | [`docs/PEOPLE_POLICY_AGENT_LAB.md`](docs/PEOPLE_POLICY_AGENT_LAB.md) |
 | TrustyAI Step 8 pointer | [`docs/trustyai-db-install/GUIDE.md`](docs/trustyai-db-install/GUIDE.md) → predictive README |
+| **Later:** AutoRAG + MCP catalog | Scenario TBD (RHOAI 3.5 official docs) — propose use cases next |
 
 ### How to use
 

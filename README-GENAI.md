@@ -27,8 +27,9 @@ Gen AI studio / Playground are often **Technology Preview** — need admin enabl
 |------|--------|------|
 | G0 | [Why Gen AI here](#g0) | |
 | G1 | [Admin — OGX + Gen AI studio](#g1) | |
-| G2 | [Deploy a chat model](#g2) | |
-| G3 | [Playground — Hotline 0800-HELP](#g3) | |
+| G1b | [New project + free GPU](#g1b) | |
+| G2 | [Deploy a chat model](#g2) | ✅ Ready |
+| G3 | [Playground — Hotline 0800-HELP](#g3) | ✅ |
 | G4 | [Out of scope](#g4) | |
 
 ---
@@ -49,7 +50,7 @@ After the predictive lab, the audience already saw OVMS. Gen AI answers a differ
 
 ### How
 
-Demo theme for this lab: **Hotline 0800-HELP** — an absurd IT support bot that answers everyday “help, my thing is broken” tickets with over-the-top scripts (ticket id, root cause, next steps). Universal humour; works in any language you set in the system prompt (lab default: English or French — pick one for the room).
+Demo theme for this lab: **Hotline 0800-HELP** — an absurd IT support bot that answers everyday “help, my thing is broken” tickets with over-the-top scripts (ticket id, root cause, next steps). Lab default: **English** system prompt + English user questions.
 
 Optional later (not required): wire OVMS outputs into a *second* prompt. Keep that out of the critical path.
 
@@ -131,44 +132,158 @@ oc get dsc default-dsc -w
 
 ---
 
+<a id="g1b"></a>
+
+# G1b — New project + free the GPU
+
+### What we want
+Run Gen AI in its **own** OpenShift AI project, and stop GPU consumers from the predictive lab so the chat model can schedule.
+
+### Why
+- Pedagogy: two labs = two namespaces (no mix OVMS / vLLM in the same mental model)
+- Sandbox reality: often **one GPU** — workbench + `muffin-chihuahua` predictor block vLLM
+
+### Success looks like
+- Project **`genai-hotline`** exists and opens in the dashboard
+- Predictive workbench is **Stopped**
+- Predictive deployment **`muffin-chihuahua`** shows status **Stopped** (Start available later — not deleted)
+- No Running predictor / workbench pods holding the GPU in `chihuahua-vs-muffin-jan`
+
+### How
+
+#### 1) Create the Gen AI project (UI)
+
+1. OpenShift AI → **Projects** → **Create project**
+2. Name: **`genai-hotline`**
+3. Create → open the project
+
+**CLI equivalent (optional):**
+
+```bash
+export PROJECT=genai-hotline
+oc apply -f - <<EOF
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ${PROJECT}
+  labels:
+    opendatahub.io/dashboard: "true"
+  annotations:
+    opendatahub.io/display-name: "Gen AI Hotline"
+EOF
+```
+
+#### 2) Free GPU in the predictive project (**Stop**, do not delete)
+
+In project **`chihuahua-vs-muffin-jan`**:
+
+1. **Workbenches** → **Stop** / pause **`chihuahua-muffin`** (not Running)
+2. **Models → Deployments** (or project Deployments) → on **`muffin-chihuahua`** use **Stop**  
+   - Status becomes **Stopped** (grey) with a **Start** action later — keep the deployment object  
+   - **Do not Delete** unless you intentionally want to redo Step 5 of the predictive lab
+
+![Predictive OVMS stopped](docs/screenshots/step-genai-muffin-serving-stopped.png)
+
+**CLI check (read-only):**
+
+```bash
+oc -n chihuahua-vs-muffin-jan get pods
+oc -n chihuahua-vs-muffin-jan get inferenceservice muffin-chihuahua
+```
+
+After a UI **Stop**, predictor pods should disappear / not Running; the InferenceService resource can remain. Prefer the dashboard **Stop** over `oc delete`.
+
+Keep MinIO / MariaDB TrustyAI / pipeline server if you want — they usually don’t take the GPU.
+
+#### 3) Verify
+
+```bash
+oc -n chihuahua-vs-muffin-jan get pods
+oc -n genai-hotline get project 2>/dev/null || oc get ns genai-hotline
+```
+
+Then continue to [G2](#g2) **inside `genai-hotline`**.
+
+---
+
 <a id="g2"></a>
 
 # G2 — Deploy a generative (chat) model
 
 ### What we want
-Deploy a **small instruct** model from the catalog as a chat AI asset.
+Deploy a **small instruct** model from the catalog as a chat AI asset **in `genai-hotline`**.
 
 ### Why
 Playground needs a Ready generative endpoint (usually **vLLM**), separate from any OVMS predictive deployment.
 
 ### Success looks like
-- Deployment **Ready**
+- Deployment **Ready** in **`genai-hotline`**
 - **Add to playground** available on the asset
 
 ### How
 
-**UI (typical RHOAI 3.5):**
+**UI path on OpenShift AI 3.5 (validated):** the model **Catalog** lives under **AI hub**, not always inside Project → Deployments.
 
-1. Open a project (lab often reuses `chihuahua-vs-muffin-jan`, or create a dedicated Gen AI project)
-2. **Deployments** → **Deploy model**
-3. Choose **Generative AI model** (not Predictive / OVMS)
-4. Pick a **small instruct** model from the **Model catalog** that fits your quota
-5. Runtime: usually **vLLM** (cluster defaults)
-6. Enable **Add as AI asset endpoint** · use case **chat**
-7. Wait until **Ready**
+1. Left nav → **AI hub** → **Models** → tab **Catalog**
 
-**Frozen example (sandbox, 1× L4):**
+![AI hub — Models Catalog](docs/screenshots/step-genai-aihub-catalog.png)
+
+2. Search / filter for a **small instruct** chat model (lab freeze: `granite` + `tiny` / `FP8`)
+3. Open the model card → **Deploy**
+4. **Project:** **`genai-hotline`**
+5. Wizard step **Model deployment** — use these validated values:
+
+| Field | Lab value |
+|-------|-----------|
+| Model deployment name | `RedHatAI/granite-4.0-h-tiny-FP8-dynamic` (resource ≈ `redhataigranite-40-h-tiny-fp8`) |
+| Deployment method | **Inference service** |
+| Hardware profile | **`gpu-profile`** (1 GPU · ~12 GiB mem) — not `default-profile` CPU-only |
+| Serving runtime template | **Automatic selection** → `vLLM NVIDIA GPU ServingRuntime for KServe` (ex. v0.24.0) |
+| Replica count | `1` |
+
+![Model deployment — gpu-profile + vLLM auto](docs/screenshots/step-genai-deploy-model-runtime.png)
+
+6. **Next** → **Advanced settings**:
+
+| Field | Lab value |
+|-------|-----------|
+| **Add as AI asset endpoint** | **Yes** (required for Playground) |
+| **Use case** | `Chatbot` (or `chat`) |
+| External route | **No** |
+| Token authentication | **No** |
+| Custom args / env | **No** |
+| Deployment strategy | **Rolling update** |
+| Model route timeout | **30** seconds |
+
+![Advanced settings — AI asset Chatbot](docs/screenshots/step-genai-deploy-advanced.png)
+
+7. **Review** — confirm the summary matches the freeze below → **Deploy model** → wait **Ready**
+
+![Review — Gen AI deploy freeze](docs/screenshots/step-genai-deploy-review.png)
+
+> If **Project → Deployments → Deploy model** only offers Predictive / empty catalog: use **AI hub → Models → Catalog** instead — that is the expected Gen AI entry point.
+
+**Frozen example (sandbox, 1× L4) — full Review:**
 
 | Field | Value |
 |-------|--------|
-| Catalog / model | `RedHatAI/granite-4.0-h-tiny-FP8-dynamic` |
-| Deployment / asset id | `redhat-granite-4.0-h-tiny-fp8` |
-| Use case | `chat` |
-| Status | **Ready** |
+| Project | **`genai-hotline`** |
+| Model type | Generative AI model (LLM) |
+| Location | `oci://registry.redhat.io/rhai/modelcar-granite-4-0-h-tiny-fp8-dynamic:3.0` |
+| Catalog / name | `RedHatAI/granite-4.0-h-tiny-FP8-dynamic` |
+| Hardware | **`gpu-profile`** |
+| Format / runtime | **vLLM** · `vLLM NVIDIA GPU ServingRuntime for KServe` |
+| Replicas | `1` |
+| AI asset endpoint | **Yes** · use case **Chatbot** |
+| External route / token | **No** / **No** |
+| Strategy / timeout | Rolling update · 30s |
+| Status | **Ready** (after deploy) |
 
-Stop other GPU workbenches/deployments if you see `Insufficient nvidia.com/gpu`.
+If you still see `Insufficient nvidia.com/gpu`, go back to [G1b](#g1b) and confirm the predictive workbench + OVMS are stopped.
 
-![AI asset Ready + Add to playground](docs/screenshots/step11-ai-asset-ready.png)
+![AI asset endpoints — Ready + Add to playground](docs/screenshots/step-genai-ai-asset-endpoints.png)
+
+> **Where is Add to playground?** Only under **Gen AI studio → AI asset endpoints** (project `genai-hotline`). It does **not** appear on **AI hub → Models → Deployments**.
 
 If Gen AI / GPU is missing on the sandbox, stop and note it — do not force a huge model.
 
@@ -190,17 +305,34 @@ This is the audience moment: generative text on OpenShift AI, instantly understa
 
 ### How
 
-Requires [G1](#g1) (`ogx: Managed`, `llamastackoperator: Removed`, `genAiStudio: true`).
+Requires [G1](#g1) (`ogx: Managed`, `llamastackoperator: Removed`, `genAiStudio: true`) and a Ready AI asset from [G2](#g2).
 
-1. **AI asset endpoints** → **+ Add to playground** on your Ready chat model  
-2. **Configure playground:** Type = **Inference**, Max tokens ≈ **512** → **Create**  
-3. Wait for **Creating playground** to finish  
+1. Left nav → **Gen AI studio** → **AI asset endpoints**  
+   - Do **not** use **AI hub → Models → Deployments** (no Playground column there)
+2. Project dropdown → **`genai-hotline`**
+3. Tab **Models** → confirm Status **Ready**, Use case **Chatbot** → **+ Add to playground**
 
-![Creating playground](docs/screenshots/step11-creating-playground.png)
+![AI asset endpoints — genai-hotline](docs/screenshots/step-genai-ai-asset-endpoints.png)
 
-4. Open **Gen AI studio → Playground**  
-5. Select your project + chat model  
-6. System prompt (copy-paste):
+4. **Configure playground** modal:
+   - Model selected: `RedHatAI/granite-4.0-h-tiny-FP8-dynamic`
+   - Type = **Inference**
+   - Max tokens ≈ **512** (optional; leave blank for default)
+   - → **Create**
+
+![Configure playground — Inference](docs/screenshots/step-genai-configure-playground.png)
+
+5. Wait for **Creating playground** to finish
+
+![Creating playground](docs/screenshots/step-genai-creating-playground.png)
+
+6. Open **Gen AI studio → Playground**  
+7. Project → **`genai-hotline`** · model → `vllm-inference-1/RedHatAI/granite-4.0-h-tiny-FP8-dynamic`  
+8. **Settings** (gear) → tab **Prompt** → paste the system prompt below → tab **Model** → Temperature ≈ **0.1**, Streaming **On**
+
+![Playground ready — genai-hotline](docs/screenshots/step-genai-playground-ready.png)
+
+9. System prompt (copy-paste into **Prompt**) — lab default is **English** (user questions in English):
 
 ```text
 You are “Hotline 0800-HELP”, an over-the-top IT support agent.
@@ -212,14 +344,16 @@ For every user message (a short problem description):
 Keep the whole answer under 120 words. No markdown tables.
 ```
 
-7. Try user messages such as:
+10. Try user messages such as:
    - `My coffee machine prints PDF instead of coffee`
    - `Wi-Fi works only when I stand on one foot`
    - `The elevator refuses Mondays`
 
 **Expected output (shape):** ticket id + absurd cause + 3 steps + closing line.
 
-> Old muffin-court screenshots in `docs/screenshots/step11-playground-teacup.png` are from a previous theme — replace when you freeze this hotline demo.
+![Playground — Hotline 0800-HELP reply](docs/screenshots/step-genai-playground-hotline.png)
+
+**Frozen example:** user `The elevator refuses Mondays` → `HELP-1042` + ridiculous root cause + 3 steps + closing line (EN prompt).
 
 ---
 
@@ -228,8 +362,8 @@ Keep the whole answer under 120 words. No markdown tables.
 # G4 — Out of scope (this Gen AI lab)
 
 - Using the LLM to classify muffin/chihuahua **images** (that is OVMS in [README-PREDICTIVE.md](README-PREDICTIVE.md))
-- RAG / AutoRAG / MCP (see official docs + optional [People Policy lab](docs/PEOPLE_POLICY_AGENT_LAB.md))
-- Production auth on the LLM route (see predictive [Step 12](README-PREDICTIVE.md#step-12) as a *pattern*, not copy-paste for Gen AI)
+- RAG / AutoRAG / MCP (see official RHOAI 3.5 docs — pick a new use case later)
+- Production auth / rate limits on the LLM route (out of scope for this lab)
 
 ---
 
