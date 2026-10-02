@@ -21,9 +21,9 @@ Hands-on labs on **one cluster / one team**. Two independent journeys (plus opti
 | Lab | File |
 |-----|------|
 | TrustyAI Step 8 pointer | [`docs/trustyai-db-install/GUIDE.md`](docs/trustyai-db-install/GUIDE.md) → predictive README |
-| **Later:** Large KB (dedicated OGX + pgvector + app) | [`README-GENAI-RAG.md`](README-GENAI-RAG.md) **R7** (notebook validate) → **R8** (`hotline-rag-chat`) |
-| **Later:** AutoRAG on Hotline KB | After R4 / R6 — use `data/hotline-kb/eval/golden_questions.json` |
-| **Later:** Autonomous day-summary agent | Agent on OpenShift AI that synthesizes the user’s daily events (calendar / mail / tools via MCP) |
+| **Hotline RAG backlog (after R8)** | [`README-GENAI-RAG.md`](README-GENAI-RAG.md) **[R9](README-GENAI-RAG.md#r9)** — AutoRAG · remote embeddings · Milvus · Docling · harden app · day-summary agent |
+| **Later:** AutoRAG on Hotline KB | `data/hotline-kb/eval/golden_questions.json` — see R9 #1 |
+| **Later:** Autonomous day-summary agent | Calendar / mail / tools via MCP — see R9 #6 |
 
 ### How to use
 

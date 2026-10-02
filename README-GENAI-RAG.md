@@ -27,6 +27,7 @@ Playground / Gen AI studio RAG is **Technology Preview**.
 | R6 | [Streamlit Hotline KB app](#r6) | ✅ `hotline-kb-chat` + ConfigMap |
 | R7 | [Install dedicated OGX + pgvector](#r7) | ✅ install + notebook validate |
 | R8 | [Streamlit app on OGX + pgvector](#r8) | ✅ `hotline-rag-chat` |
+| R9 | [Backlog — next sessions](#r9) | park so we do not forget |
 
 ---
 
@@ -762,6 +763,39 @@ oc -n genai-hotline start-build hotline-rag-chat --from-dir=apps/hotline_rag_cha
 ```
 
 **Teaching point:** R6 = small KB in ConfigMap · R7 notebook = prove pgvector · R8 = same search for real users on a Route. Prompt = code in `app.py` (`SYSTEM` → OGX `instructions`); knowledge = chunks in pgvector.
+
+---
+
+<a id="r9"></a>
+
+# R9 — Backlog (next sessions — do not forget)
+
+### What we want
+Park follow-ups now that the Hotline RAG path is proven end-to-end (Playground → ConfigMap app → dedicated OGX/pgvector → Streamlit).
+
+### Why
+Avoid losing the “what’s next” ideas after the room ships R8.
+
+### Success looks like
+- Facilitator and future-you know the ordered backlog below
+- Links point at the right corpus / docs
+
+### How
+
+**Done in this lab (freeze):** R0–R8 — Playground Knowledge · grounded prompts · `hotline-kb-chat` (ConfigMap) · dedicated `hotline-rag-pgvector` + `hotline-rag-ogx` · notebook validate · `hotline-rag-chat` on Route.
+
+**Next sessions (pick one per sitting):**
+
+| # | Topic | Why / starting point |
+|---|--------|----------------------|
+| 1 | **AutoRAG** on Hotline KB | Tune chunking / embedding / retrieval with [`data/hotline-kb/eval/golden_questions.json`](data/hotline-kb/eval/golden_questions.json) — [AutoRAG docs](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/working_with_autorag/index) |
+| 2 | **Remote embedding model** | Official production-style path (separate embedding endpoint) when a 2nd GPU or remote embedder is available — today we use inline sentence-transformers on the OGX pod |
+| 3 | **Milvus** (instead of / beside pgvector) | Large-scale vector store + etcd — [vector database chapter](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/working_with_ogx/select-and-deploy-a-vector-database_rag); same notebook/app pattern with `provider_id: milvus-remote` |
+| 4 | **Docling ingest pipeline** | PDFs / messy docs → Markdown → same OGX vector store — [Building RAG with OGX](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/building_rag_applications_with_ogx/index) Docling section |
+| 5 | **Harden `hotline-rag-chat`** | Auth on the Route · ConfigMap/Secret for `VECTOR_STORE_ID` · optional Open WebUI on the same OGX |
+| 6 | **Day-summary agent + MCP** | Separate Gen AI story: agent that summarizes the user’s day (calendar / mail / tools) — hub “Later” item |
+
+Hub pointer: keep this backlog mirrored under **Optional / related** in [`README.md`](README.md).
 
 ---
 
