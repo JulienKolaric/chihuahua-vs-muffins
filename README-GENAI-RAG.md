@@ -25,7 +25,8 @@ Playground / Gen AI studio RAG is **Technology Preview**.
 | R4 | [Grounded Hotline prompts](#r4) | ✅ HIT elevator · MISS fridge |
 | R5 | [Playground → real hotline app](#r5) | map |
 | R6 | [Streamlit Hotline KB app](#r6) | ✅ `hotline-kb-chat` + ConfigMap |
-| R7 | [Install dedicated OGX + pgvector](#r7) | install + notebook |
+| R7 | [Install dedicated OGX + pgvector](#r7) | ✅ install + notebook validate |
+| R8 | [Streamlit app on OGX + pgvector](#r8) | deploy `hotline-rag-chat` |
 
 ---
 
@@ -608,13 +609,16 @@ service/hotline-rag-ogx-service    8321/TCP
 
 If the Service name differs slightly, take the one created for `hotline-rag-ogx` and put it in the notebook `OGX=` URL.
 
-#### 3) Workbench + ingest / query
+#### 3) Workbench notebook — **validate before the app**
+
+**Why this notebook exists:** prove ingest + HIT/MISS on **your** OGX/pgvector **before** you wire an end-user UI. Do not skip it: the Streamlit app in [R8](#r8) needs a working `vector_store_id` from this run.
 
 1. Create a CPU workbench in **`genai-hotline`**
 2. Clone this repo (or copy `data/hotline-kb/upload/` + the notebook)
 3. Open [`notebooks/14_hotline_ogx_pgvector.ipynb`](notebooks/14_hotline_ogx_pgvector.ipynb)
 4. Confirm cell `OGX = http://hotline-rag-ogx-service…:8321` (not the playground service)
 5. Run all cells
+6. **Copy** the printed `vector_store_id = vs_…` — you will set it as env on the app in R8
 
 **Expected output (shape)**
 
@@ -626,6 +630,10 @@ Q: The elevator refuses Mondays
 Q: My fridge is singing opera
 A: MISS — …
 ```
+
+![R7 notebook — HIT elevator / MISS fridge](docs/screenshots/step-genai-rag-r7-notebook.png)
+
+**Frozen:** notebook validates dedicated OGX + pgvector · then go to [R8](#r8) to attach Streamlit.
 
 #### 4) Contrast with Playground (optional check)
 
@@ -646,6 +654,88 @@ oc -n "$NS" delete -f manifests/hotline-rag/01-postgres-pgvector.yaml --ignore-n
 ```
 
 **Milvus later:** official path is Milvus + dedicated etcd, then `provider_id: milvus-remote` in the same notebook style — heavier; pgvector is the install we do here.
+
+---
+
+<a id="r8"></a>
+
+# R8 — Streamlit app on dedicated OGX + pgvector (`hotline-rag-chat`)
+
+### What we want
+Give callers a normal chat URL. Behind it: **your** OGX searches **your** pgvector (same path the R7 notebook already proved).
+
+### Why
+The notebook is for builders. End users open a Route. R6 (`hotline-kb-chat`) searched a ConfigMap; this app searches the database you installed in R7.
+
+### Success looks like
+- Route `hotline-rag-chat` opens **Hotline 0800-HELP — RAG**
+- Sidebar shows `OGX_URL` + `VECTOR_STORE_ID`
+- Elevator → grounded HIT · fridge → MISS
+- No GPU on this Deployment
+
+### How
+
+**Prerequisite:** [R7](#r7) notebook completed successfully — you have a `vector_store_id` (`vs_…`). That notebook step is the **validation gate before** this app.
+
+#### 1) Deploy (from repo root)
+
+Replace `vs_PASTE_FROM_NOTEBOOK` with your id from the notebook.
+
+```bash
+NS=genai-hotline
+VS_ID='vs_PASTE_FROM_NOTEBOOK'
+
+oc -n "$NS" delete all,bc,is,route -l app=hotline-rag-chat --ignore-not-found
+oc -n "$NS" delete deploy/hotline-rag-chat svc/hotline-rag-chat route/hotline-rag-chat \
+  bc/hotline-rag-chat is/hotline-rag-chat --ignore-not-found
+
+oc -n "$NS" new-build --name=hotline-rag-chat --binary --strategy=source \
+  --image-stream=python:3.12-ubi9
+
+oc -n "$NS" start-build hotline-rag-chat --from-dir=apps/hotline_rag_chat --follow
+
+oc -n "$NS" new-app hotline-rag-chat \
+  -e PORT=8080 \
+  -e OGX_URL=http://hotline-rag-ogx-service.genai-hotline.svc.cluster.local:8321 \
+  -e VECTOR_STORE_ID="$VS_ID"
+
+oc -n "$NS" create route edge hotline-rag-chat --service=hotline-rag-chat --port=8080 \
+  --dry-run=client -o yaml | oc apply -f -
+
+oc -n "$NS" label deploy/hotline-rag-chat svc/hotline-rag-chat route/hotline-rag-chat \
+  bc/hotline-rag-chat is/hotline-rag-chat app=hotline-rag-chat --overwrite
+
+oc -n "$NS" rollout status deploy/hotline-rag-chat --timeout=300s
+oc -n "$NS" get route hotline-rag-chat -o jsonpath='https://{.spec.host}{"\n"}'
+```
+
+**Expected output (shape)**
+
+```text
+deployment "hotline-rag-chat" successfully rolled out
+https://hotline-rag-chat-genai-hotline.apps....
+```
+
+#### 2) Test in the browser
+
+1. Open the Route  
+2. `The elevator refuses Mondays` → `LIFT-MON-1`  
+3. `My fridge is singing opera` → MISS  
+
+#### Update `VECTOR_STORE_ID` after a new notebook ingest
+
+```bash
+oc -n genai-hotline set env deploy/hotline-rag-chat VECTOR_STORE_ID='vs_NEW'
+oc -n genai-hotline rollout status deploy/hotline-rag-chat --timeout=180s
+```
+
+#### Rebuild after code change
+
+```bash
+oc -n genai-hotline start-build hotline-rag-chat --from-dir=apps/hotline_rag_chat --follow
+```
+
+**Teaching point:** R6 = small KB in ConfigMap · R7 notebook = prove pgvector · R8 = same search for real users on a Route.
 
 ---
 
