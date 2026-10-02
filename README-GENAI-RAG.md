@@ -568,7 +568,9 @@ NAME                   TYPE        CLUSTER-IP     PORT(S)
 hotline-rag-pgvector   ClusterIP   172.30.…       5432/TCP
 ```
 
-Lab image note: official doc example uses `pgvector/pgvector:pg16`. These manifests use `registry.redhat.io/rhel9/postgresql-16` + init `CREATE EXTENSION vector` (same pattern as platform-managed pgvector) so the pod schedules on typical OpenShift SCC.
+Lab image note: official doc example uses `pgvector/pgvector:pg16`. These manifests use `registry.redhat.io/rhel9/postgresql-16` + init `CREATE EXTENSION vector` **as user `postgres`** (superuser — the app role cannot create extensions) so the pod schedules on typical OpenShift SCC.
+
+If you already started the pod once and saw `permission denied to create extension "vector"`, the data directory may already exist: either run the one-shot fix below, or delete the PVC and recreate so init scripts run again.
 
 #### 2) Secrets + dedicated OGXServer
 

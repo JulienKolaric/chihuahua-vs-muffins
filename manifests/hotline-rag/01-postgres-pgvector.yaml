@@ -29,8 +29,17 @@ metadata:
 data:
   enable-pgvector.sh: |
     #!/bin/bash
-    psql -U "${POSTGRESQL_USER:-hotline}" -d "${POSTGRESQL_DATABASE:-hotline_rag}" \
-      -c "CREATE EXTENSION IF NOT EXISTS vector;"
+    # Must run as DB superuser (postgres). App user "hotline" cannot CREATE EXTENSION.
+    set -euo pipefail
+    DB="${POSTGRESQL_DATABASE:-hotline_rag}"
+    APP_USER="${POSTGRESQL_USER:-hotline}"
+    echo "Enabling pgvector extension in database ${DB}…"
+    psql -U postgres -d "${DB}" -v ON_ERROR_STOP=1 <<SQL
+    CREATE EXTENSION IF NOT EXISTS vector;
+    GRANT USAGE ON SCHEMA public TO ${APP_USER};
+    GRANT CREATE ON SCHEMA public TO ${APP_USER};
+    SQL
+    echo "pgvector extension ready."
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
