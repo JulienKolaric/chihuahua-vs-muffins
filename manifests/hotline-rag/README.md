@@ -4,6 +4,18 @@
 
 Lab guide (What / Why / Success / How): **[`README-GENAI-RAG.md` §R7](../../README-GENAI-RAG.md#r7)**
 
+## What pgvector does
+
+PostgreSQL alone stores text and tables. **pgvector** is an extension that stores *vectors* (numeric fingerprints of text). When a user asks a question, OGX turns the question into a vector and asks Postgres for the nearest stored passages — then the LLM answers from those passages. Without that, a large KB means reading everything or guessing.
+
+## How this folder installs it
+
+1. [`01-postgres-pgvector.yaml`](01-postgres-pgvector.yaml) — deploy Postgres, PVC, Service; init script runs `CREATE EXTENSION IF NOT EXISTS vector;`
+2. [`02-secrets.yaml`](02-secrets.yaml) — connection details for OGX + link to Granite
+3. [`03-ogxserver.yaml`](03-ogxserver.yaml) — `ENABLE_PGVECTOR=true` and `PGVECTOR_*` pointing at **this** Service (not Playground)
+
+Ingest is not in the YAML: the notebook uploads files so OGX chunks, embeds, and writes into that database.
+
 ## What we install
 
 | File | Creates | Role |

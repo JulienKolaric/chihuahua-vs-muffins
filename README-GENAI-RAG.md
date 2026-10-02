@@ -516,6 +516,10 @@ Install a **real** RAG backend as an app team would: your own PostgreSQL+pgvecto
 ### Why
 Playground storage is for experiments and disappears with the playground. A hotline product needs a stack you own, can back up, and can point an app at.
 
+**What pgvector is (plain language):** PostgreSQL stores normal rows. The **pgvector** extension adds a column type for *embedding* vectors (number lists that represent text meaning). At question time, the system asks “which stored passages are closest to this question?” instead of scanning every file. That is what makes a large KB practical.
+
+**How we install it here:** we deploy our own PostgreSQL in the project (`hotline-rag-pgvector`), run `CREATE EXTENSION vector` on first start (init script), then point a dedicated `OGXServer` at it with `ENABLE_PGVECTOR=true`. We do **not** reuse Playground’s `genai-pgvector`.
+
 ### Success looks like
 - `hotline-rag-pgvector` Deployment **1/1 Ready**
 - `OGXServer/hotline-rag-ogx` **Ready**; Service `hotline-rag-ogx-service:8321`
@@ -544,6 +548,8 @@ Lab manifests: [`manifests/hotline-rag/`](manifests/hotline-rag/) (Technology Pr
 
 #### 1) Install PostgreSQL + pgvector (yours)
 
+**What this step does:** starts a Postgres pod, creates DB/user from the Secret, enables the `vector` extension, exposes Service `hotline-rag-pgvector:5432`. After this, nothing is searchable yet — that comes when OGX embeds and writes chunks (notebook step 3).
+
 ```bash
 NS=genai-hotline
 
@@ -566,6 +572,7 @@ Lab image note: official doc example uses `pgvector/pgvector:pg16`. These manife
 
 #### 2) Secrets + dedicated OGXServer
 
+**What this step does:** gives OGX the DB password/host and the Granite URL, then creates `OGXServer/hotline-rag-ogx` with `ENABLE_PGVECTOR=true` so ingest/query APIs use **your** database.
 ```bash
 NS=genai-hotline
 
