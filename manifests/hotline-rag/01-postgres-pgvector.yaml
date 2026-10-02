@@ -1,0 +1,131 @@
+# Dedicated Hotline RAG PostgreSQL + pgvector (NOT the Playground genai-pgvector).
+# Pattern: official "Deploying a PostgreSQL instance with pgvector" (RHOAI 3.5),
+# image adapted to registry.redhat.io/rhel9/postgresql-16 + init script
+# (same approach OpenShift AI uses for genai-pgvector — schedules on restricted SCC).
+#
+# Apply: oc apply -f manifests/hotline-rag/01-postgres-pgvector.yaml -n genai-hotline
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hotline-rag-pg-credentials
+  labels:
+    app: hotline-rag
+stringData:
+  POSTGRES_DB: hotline_rag
+  POSTGRES_USER: hotline
+  POSTGRES_PASSWORD: hotline-rag-lab-change-me
+  # RH image env names
+  POSTGRESQL_DATABASE: hotline_rag
+  POSTGRESQL_USER: hotline
+  POSTGRESQL_PASSWORD: hotline-rag-lab-change-me
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hotline-rag-pg-init
+  labels:
+    app: hotline-rag
+data:
+  enable-pgvector.sh: |
+    #!/bin/bash
+    psql -U "${POSTGRESQL_USER:-hotline}" -d "${POSTGRESQL_DATABASE:-hotline_rag}" \
+      -c "CREATE EXTENSION IF NOT EXISTS vector;"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hotline-rag-pg-pvc
+  labels:
+    app: hotline-rag
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hotline-rag-pgvector
+  labels:
+    app: hotline-rag
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hotline-rag-pgvector
+  template:
+    metadata:
+      labels:
+        app: hotline-rag-pgvector
+    spec:
+      containers:
+        - name: postgres
+          image: registry.redhat.io/rhel9/postgresql-16
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRESQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: hotline-rag-pg-credentials
+                  key: POSTGRESQL_DATABASE
+            - name: POSTGRESQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: hotline-rag-pg-credentials
+                  key: POSTGRESQL_USER
+            - name: POSTGRESQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: hotline-rag-pg-credentials
+                  key: POSTGRESQL_PASSWORD
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "hotline", "-d", "hotline_rag"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "hotline", "-d", "hotline_rag"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/pgsql/data
+            - name: init-scripts
+              mountPath: /opt/app-root/src/postgresql-start
+              readOnly: true
+      volumes:
+        - name: pgdata
+          persistentVolumeClaim:
+            claimName: hotline-rag-pg-pvc
+        - name: init-scripts
+          configMap:
+            name: hotline-rag-pg-init
+            defaultMode: 0755
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hotline-rag-pgvector
+  labels:
+    app: hotline-rag
+spec:
+  selector:
+    app: hotline-rag-pgvector
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP

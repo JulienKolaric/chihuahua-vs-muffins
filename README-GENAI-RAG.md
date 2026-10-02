@@ -25,7 +25,7 @@ Playground / Gen AI studio RAG is **Technology Preview**.
 | R4 | [Grounded Hotline prompts](#r4) | ✅ HIT elevator · MISS fridge |
 | R5 | [Playground → real hotline app](#r5) | map |
 | R6 | [Streamlit Hotline KB app](#r6) | ✅ `hotline-kb-chat` + ConfigMap |
-| R7 | [Large KB map (pgvector / Milvus)](#r7) | map only |
+| R7 | [Install dedicated OGX + pgvector](#r7) | install + notebook |
 
 ---
 
@@ -344,12 +344,12 @@ End users never open Gen AI studio Settings.
 
 ### How
 
-| Piece (Playground) | Lab app ([R6](#r6)) | Large KB later ([R7](#r7)) |
+| Piece (Playground) | Lab app ([R6](#r6)) | Dedicated RAG ([R7](#r7)) |
 |--------------------|---------------------|---------------------------|
-| vLLM Granite | Same `/v1` endpoint | Same |
-| Knowledge upload | **ConfigMap** `hotline-kb` | Files in S3 / share → ingest job |
-| HIT/MISS prompt | Hard-coded in the app | Same idea in app / OGX |
-| Search | Local text match in the app | **pgvector** or **Milvus** (nearest passages) |
+| vLLM Granite | Same `/v1` endpoint | Same predictor (wired into your OGX) |
+| Knowledge upload | **ConfigMap** `hotline-kb` | Ingest into **your** pgvector via OGX |
+| HIT/MISS prompt | Hard-coded in the app | Notebook / later app on your OGX |
+| Search | Local text match | Similarity search (`file_search`) |
 
 ---
 
@@ -502,36 +502,132 @@ oc -n "$NS" rollout restart deploy/hotline-kb-chat
 oc -n genai-hotline start-build hotline-kb-chat --from-dir=apps/hotline_kb_chat --follow
 ```
 
-**Limits (lab honesty):** ConfigMaps are fine for a few small text files (~1 MiB cap). Big libraries → [R7](#r7) (pgvector / Milvus / OGX).
+**Limits (lab honesty):** ConfigMaps are fine for a few small text files (~1 MiB cap). Big libraries → install your own vector DB + OGX in [R7](#r7).
 
 ---
 
 <a id="r7"></a>
 
-# R7 — Large KB map (pgvector / Milvus) — not hands-on yet
+# R7 — Install dedicated Hotline RAG (OGX + pgvector)
 
 ### What we want
-Know how the story scales when ConfigMap is too small — without deploying it in this session.
+Install a **real** RAG backend as an app team would: your own PostgreSQL+pgvector, your own `OGXServer`, then ingest Hotline runbooks and query. **Do not** reuse Playground `genai-pgvector` / `lsd-genai-playground` for this step.
 
 ### Why
-A real hotline may have hundreds of PDFs/runbooks. You need storage + an index + “fetch a few useful pages per question”.
+Playground storage is for experiments and disappears with the playground. A hotline product needs a stack you own, can back up, and can point an app at.
 
 ### Success looks like
-- You can draw: documents → index job → vector DB → chat app → LLM
-- You know Playground already created **`genai-pgvector`** in this project (experiment store); a production-style stack often uses a **managed** remote pgvector or Milvus via OGX
+- `hotline-rag-pgvector` Deployment **1/1 Ready**
+- `OGXServer/hotline-rag-ogx` **Ready**; Service `hotline-rag-ogx-service:8321`
+- Notebook indexes Hotline files into **your** vector store and answers elevator / fridge
+- Playground resources remain untouched (`genai-pgvector`, `lsd-genai-playground`)
 
 ### How
 
-**Flow (plain language):**
+**Story in one minute:** R6 proved grounded answers with files in a ConfigMap. R7 is what you do when the KB grows — you **install** a database that stores searchable chunks, an **OGX** front that talks to that DB + your LLM, then a **notebook** (later: app) that uploads docs and asks questions. Playground stays for demos; this stack is yours.
 
-1. **Documents** live outside the chat Deployment (S3, Git, file share).  
-2. A **job / notebook** (Docling on OpenShift AI) reads them, splits them, and writes searchable pieces into **pgvector** or **Milvus**.  
-3. The **chat app** (or OGXServer) asks the vector DB for the closest pieces, then calls **vLLM** with those pieces + your Hotline prompt.  
-4. When docs change, re-run the ingest job — not a full app rewrite.
+Docs of record:
 
-**On this cluster today:** `genai-pgvector` already exists (Playground). Reusing it for a custom app is possible but couples you to the playground store. Official app path: [Building RAG applications with OGX](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/building_rag_applications_with_ogx/index) (OGXServer + remote Milvus **or** remote PostgreSQL/pgvector + Docling ingest) — Technology Preview. Optional warm-up: **AutoRAG** on `data/hotline-kb/eval/golden_questions.json`.
+- [Select and deploy a vector database](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/working_with_ogx/select-and-deploy-a-vector-database_rag) (PostgreSQL + pgvector + `ENABLE_PGVECTOR`)
+- [Building RAG applications with OGX](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/building_rag_applications_with_ogx/index) (ingest + query)
+- [Deploying a OGX server](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/working_with_ogx/deploying-ogx-server_rag)
 
-**Next session (when you want hands-on):** pick Milvus **or** remote pgvector from that doc, ingest Hotline (or a bigger corpus), point a thin UI at the query API.
+Lab manifests: [`manifests/hotline-rag/`](manifests/hotline-rag/) (Technology Preview stack).
+
+**GPU note:** this install reuses the existing Granite vLLM (1× GPU). Embeddings use the OGX distribution’s inline sentence-transformers (CPU on the OGX pod). Production docs often add a **remote** embedding endpoint — out of scope if you only have one GPU.
+
+#### 0) Prerequisites
+
+- Project `genai-hotline`
+- Granite predictor **Ready** (G2)
+- From **repo root** on your laptop
+
+#### 1) Install PostgreSQL + pgvector (yours)
+
+```bash
+NS=genai-hotline
+
+oc -n "$NS" apply -f manifests/hotline-rag/01-postgres-pgvector.yaml
+oc -n "$NS" rollout status deploy/hotline-rag-pgvector --timeout=300s
+oc -n "$NS" get svc hotline-rag-pgvector
+```
+
+**Expected output (shape)**
+
+```text
+secret/hotline-rag-pg-credentials created
+…
+deployment "hotline-rag-pgvector" successfully rolled out
+NAME                   TYPE        CLUSTER-IP     PORT(S)
+hotline-rag-pgvector   ClusterIP   172.30.…       5432/TCP
+```
+
+Lab image note: official doc example uses `pgvector/pgvector:pg16`. These manifests use `registry.redhat.io/rhel9/postgresql-16` + init `CREATE EXTENSION vector` (same pattern as platform-managed pgvector) so the pod schedules on typical OpenShift SCC.
+
+#### 2) Secrets + dedicated OGXServer
+
+```bash
+NS=genai-hotline
+
+oc -n "$NS" apply -f manifests/hotline-rag/02-secrets.yaml
+oc -n "$NS" apply -f manifests/hotline-rag/03-ogxserver.yaml
+
+oc -n "$NS" get ogxserver hotline-rag-ogx -w
+# Ctrl-C when PHASE shows Ready (or status.conditions DeploymentReady=True)
+
+oc -n "$NS" get svc,pods -l app=hotline-rag
+oc -n "$NS" get svc | grep hotline-rag-ogx
+oc -n "$NS" logs -l app.kubernetes.io/instance=hotline-rag-ogx --tail=40
+```
+
+**Expected output (shape)**
+
+```text
+ogxserver.ogx.io/hotline-rag-ogx   Ready
+service/hotline-rag-ogx-service    8321/TCP
+… Listening on …:8321 …
+```
+
+If the Service name differs slightly, take the one created for `hotline-rag-ogx` and put it in the notebook `OGX=` URL.
+
+#### 3) Workbench + ingest / query
+
+1. Create a CPU workbench in **`genai-hotline`**
+2. Clone this repo (or copy `data/hotline-kb/upload/` + the notebook)
+3. Open [`notebooks/14_hotline_ogx_pgvector.ipynb`](notebooks/14_hotline_ogx_pgvector.ipynb)
+4. Confirm cell `OGX = http://hotline-rag-ogx-service…:8321` (not the playground service)
+5. Run all cells
+
+**Expected output (shape)**
+
+```text
+vector_store_id = vs_…
+uploaded 03_elevator_monday.txt -> file-…
+Q: The elevator refuses Mondays
+  retrieved: ≥1 … LIFT-MON-1 …
+Q: My fridge is singing opera
+A: MISS — …
+```
+
+#### 4) Contrast with Playground (optional check)
+
+```bash
+oc -n genai-hotline get deploy genai-pgvector hotline-rag-pgvector
+oc -n genai-hotline get ogxserver
+```
+
+You should see **two** pgvector deployments and **two** OGXServers.
+
+#### Cleanup (when done)
+
+```bash
+NS=genai-hotline
+oc -n "$NS" delete ogxserver/hotline-rag-ogx --ignore-not-found
+oc -n "$NS" delete -f manifests/hotline-rag/02-secrets.yaml --ignore-not-found
+oc -n "$NS" delete -f manifests/hotline-rag/01-postgres-pgvector.yaml --ignore-not-found
+```
+
+**Milvus later:** official path is Milvus + dedicated etcd, then `provider_id: milvus-remote` in the same notebook style — heavier; pgvector is the install we do here.
 
 ---
 

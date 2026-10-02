@@ -35,7 +35,7 @@ Gen AI studio / Playground are often **Technology Preview** — need admin enabl
 | G5 | [Playground — Hotline (simplest)](#g5) | ✅ |
 | G6 | [Out of scope](#g6) | |
 
-RAG continuation: **[`README-GENAI-RAG.md`](README-GENAI-RAG.md)** (Playground Knowledge → Streamlit **`hotline-kb-chat`** → AutoRAG later).
+RAG continuation: **[`README-GENAI-RAG.md`](README-GENAI-RAG.md)** (Playground Knowledge → Streamlit **`hotline-kb-chat`** → **install dedicated OGX+pgvector** R7).
 
 ---
 

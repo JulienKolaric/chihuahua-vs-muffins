@@ -1,0 +1,97 @@
+# Dedicated OGXServer for Hotline RAG — separate from Playground (lsd-genai-playground).
+# Schema matches the live CRD on RHOAI 3.5 (distribution + workload.overrides.env).
+# Enables remote pgvector per:
+# https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/working_with_ogx/select-and-deploy-a-vector-database_rag
+#
+# Apply: oc apply -f manifests/hotline-rag/03-ogxserver.yaml -n genai-hotline
+---
+apiVersion: ogx.io/v1beta1
+kind: OGXServer
+metadata:
+  name: hotline-rag-ogx
+  labels:
+    app: hotline-rag
+spec:
+  distribution:
+    name: rh-dev
+  network:
+    port: 8321
+  workload:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 250m
+        memory: 500Mi
+      limits:
+        cpu: "2"
+        memory: 12Gi
+    overrides:
+      env:
+        # LLM (existing Granite vLLM in this project)
+        - name: INFERENCE_MODEL
+          valueFrom:
+            secretKeyRef:
+              name: hotline-rag-ogx-llm
+              key: INFERENCE_MODEL
+        - name: VLLM_URL
+          valueFrom:
+            secretKeyRef:
+              name: hotline-rag-ogx-llm
+              key: VLLM_URL
+        - name: VLLM_TLS_VERIFY
+          valueFrom:
+            secretKeyRef:
+              name: hotline-rag-ogx-llm
+              key: VLLM_TLS_VERIFY
+        - name: VLLM_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hotline-rag-ogx-llm
+              key: VLLM_API_TOKEN
+        - name: VLLM_MAX_TOKENS
+          valueFrom:
+            secretKeyRef:
+              name: hotline-rag-ogx-llm
+              key: VLLM_MAX_TOKENS
+        # PostgreSQL metadata store (same instance as vectors for this lab)
+        - name: POSTGRES_HOST
+          value: hotline-rag-pgvector
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          value: hotline_rag
+        - name: POSTGRES_USER
+          value: hotline
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hotline-rag-pg-credentials
+              key: POSTGRES_PASSWORD
+        # Remote pgvector provider (required — not automatic)
+        - name: ENABLE_PGVECTOR
+          value: "true"
+        - name: PGVECTOR_HOST
+          valueFrom:
+            secretKeyRef:
+              name: hotline-rag-pgvector-connection
+              key: PGVECTOR_HOST
+        - name: PGVECTOR_PORT
+          valueFrom:
+            secretKeyRef:
+              name: hotline-rag-pgvector-connection
+              key: PGVECTOR_PORT
+        - name: PGVECTOR_DB
+          valueFrom:
+            secretKeyRef:
+              name: hotline-rag-pgvector-connection
+              key: PGVECTOR_DB
+        - name: PGVECTOR_USER
+          valueFrom:
+            secretKeyRef:
+              name: hotline-rag-pgvector-connection
+              key: PGVECTOR_USER
+        - name: PGVECTOR_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: hotline-rag-pgvector-connection
+              key: PGVECTOR_PASSWORD
