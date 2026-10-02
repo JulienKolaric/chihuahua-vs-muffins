@@ -26,7 +26,7 @@ Playground / Gen AI studio RAG is **Technology Preview**.
 | R5 | [Playground → real hotline app](#r5) | map |
 | R6 | [Streamlit Hotline KB app](#r6) | ✅ `hotline-kb-chat` + ConfigMap |
 | R7 | [Install dedicated OGX + pgvector](#r7) | ✅ install + notebook validate |
-| R8 | [Streamlit app on OGX + pgvector](#r8) | deploy `hotline-rag-chat` |
+| R8 | [Streamlit app on OGX + pgvector](#r8) | ✅ `hotline-rag-chat` |
 
 ---
 
@@ -742,7 +742,11 @@ https://hotline-rag-chat-genai-hotline.apps....
 
 1. Open the Route  
 2. `The elevator refuses Mondays` → `LIFT-MON-1`  
-3. `My fridge is singing opera` → MISS  
+3. `My fridge is singing opera` → MISS (or clear “no matching runbook”)  
+
+![Streamlit Hotline RAG — dedicated OGX + own pgvector](docs/screenshots/step-genai-rag-hotline-rag-chat.png)
+
+**Frozen:** end-user Route `hotline-rag-chat` · sidebar shows your OGX + `vs_…` · elevator grounded on runbook · fridge out-of-KB · `OGX file_search` captions.
 
 #### Update `VECTOR_STORE_ID` after a new notebook ingest
 
