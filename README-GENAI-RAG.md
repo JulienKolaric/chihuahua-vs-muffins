@@ -353,35 +353,6 @@ End users never open Gen AI studio Settings.
 
 ---
 
-<a id="r7"></a>
-
-# R7 — Large KB map (pgvector / Milvus) — not hands-on yet
-
-### What we want
-Know how the story scales when ConfigMap is too small — without deploying it in this session.
-
-### Why
-A real hotline may have hundreds of PDFs/runbooks. You need storage + an index + “fetch a few useful pages per question”.
-
-### Success looks like
-- You can draw: documents → index job → vector DB → chat app → LLM
-- You know Playground already created **`genai-pgvector`** in this project (experiment store); a production-style stack often uses a **managed** remote pgvector or Milvus via OGX
-
-### How
-
-**Flow (plain language):**
-
-1. **Documents** live outside the chat Deployment (S3, Git, file share).  
-2. A **job / notebook** (Docling on OpenShift AI) reads them, splits them, and writes searchable pieces into **pgvector** or **Milvus**.  
-3. The **chat app** (or OGXServer) asks the vector DB for the closest pieces, then calls **vLLM** with those pieces + your Hotline prompt.  
-4. When docs change, re-run the ingest job — not a full app rewrite.
-
-**On this cluster today:** `genai-pgvector` already exists (Playground). Reusing it for a custom app is possible but couples you to the playground store. Official app path: [Building RAG applications with OGX](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/building_rag_applications_with_ogx/index) (OGXServer + remote Milvus **or** remote PostgreSQL/pgvector + Docling ingest) — Technology Preview. Optional warm-up: **AutoRAG** on `data/hotline-kb/eval/golden_questions.json`.
-
-**Next session (when you want hands-on):** pick Milvus **or** remote pgvector from that doc, ingest Hotline (or a bigger corpus), point a thin UI at the query API.
-
----
-
 <a id="r6"></a>
 
 # R6 — Streamlit Hotline KB app (`hotline-kb-chat`)
@@ -532,6 +503,35 @@ oc -n genai-hotline start-build hotline-kb-chat --from-dir=apps/hotline_kb_chat 
 ```
 
 **Limits (lab honesty):** ConfigMaps are fine for a few small text files (~1 MiB cap). Big libraries → [R7](#r7) (pgvector / Milvus / OGX).
+
+---
+
+<a id="r7"></a>
+
+# R7 — Large KB map (pgvector / Milvus) — not hands-on yet
+
+### What we want
+Know how the story scales when ConfigMap is too small — without deploying it in this session.
+
+### Why
+A real hotline may have hundreds of PDFs/runbooks. You need storage + an index + “fetch a few useful pages per question”.
+
+### Success looks like
+- You can draw: documents → index job → vector DB → chat app → LLM
+- You know Playground already created **`genai-pgvector`** in this project (experiment store); a production-style stack often uses a **managed** remote pgvector or Milvus via OGX
+
+### How
+
+**Flow (plain language):**
+
+1. **Documents** live outside the chat Deployment (S3, Git, file share).  
+2. A **job / notebook** (Docling on OpenShift AI) reads them, splits them, and writes searchable pieces into **pgvector** or **Milvus**.  
+3. The **chat app** (or OGXServer) asks the vector DB for the closest pieces, then calls **vLLM** with those pieces + your Hotline prompt.  
+4. When docs change, re-run the ingest job — not a full app rewrite.
+
+**On this cluster today:** `genai-pgvector` already exists (Playground). Reusing it for a custom app is possible but couples you to the playground store. Official app path: [Building RAG applications with OGX](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/building_rag_applications_with_ogx/index) (OGXServer + remote Milvus **or** remote PostgreSQL/pgvector + Docling ingest) — Technology Preview. Optional warm-up: **AutoRAG** on `data/hotline-kb/eval/golden_questions.json`.
+
+**Next session (when you want hands-on):** pick Milvus **or** remote pgvector from that doc, ingest Hotline (or a bigger corpus), point a thin UI at the query API.
 
 ---
 
