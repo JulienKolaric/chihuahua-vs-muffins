@@ -1,0 +1,7 @@
+# Deprecated for the lab path: prefer OpenShift S2I via `oc new-app` / binary build
+# (see README-GENAI.md G4.A). Kept only as emergency fallback if S2I images are unavailable.
+#
+# Prefer:
+#   oc new-build --name=hotline-chat --binary --strategy=source \
+#     --image-stream=python:3.12-ubi9 -n genai-hotline
+#   oc start-build hotline-chat --from-dir=apps/hotline_chat --follow -n genai-hotline

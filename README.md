@@ -5,7 +5,7 @@ Hands-on labs on **one cluster / one team**. Two independent journeys (plus opti
 | Lab | File | What you practice |
 |-----|------|-------------------|
 | **Predictive** — Chihuahua vs Muffin | [`README-PREDICTIVE.md`](README-PREDICTIVE.md) | S3 → train → **OVMS** → guardrails → **TrustyAI** → pipelines → **AutoML** |
-| **Gen AI** — Playground / OGX | [`README-GENAI.md`](README-GENAI.md) | Project **`genai-hotline`** · chat LLM + Playground (**Hotline 0800-HELP**) |
+| **Gen AI** — Playground / OGX | [`README-GENAI.md`](README-GENAI.md) | **`genai-hotline`** · vLLM Hotline · **Open WebUI → Streamlit/S2I → Playground** |
 
 | | Predictive | Gen AI |
 |--|------------|--------|

@@ -1,0 +1,2 @@
+# Custom .s2i/bin/run starts Streamlit (not gunicorn/WSGI).
+# Assemble still installs requirements.txt via the Python S2I image.

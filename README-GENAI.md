@@ -6,7 +6,8 @@
 |--|------------------------------------------|--------------|
 | Goal | Train / serve / monitor an **image classifier** (OVMS) | Chat with a **generative** model (LLM) |
 | Theme | Muffin ↔ chihuahua photos | **Independent** fun demo (no images required) |
-| UI | Workbench, Deployments (predictive), TrustyAI… | **Gen AI studio → Playground** |
+| UI | Workbench, Deployments (predictive), TrustyAI… | External chat UIs + **Gen AI studio → Playground** |
+
 
 **One-liner for the room:** same OpenShift AI cluster, **different product surface** — scores vs sentences.
 
@@ -29,8 +30,10 @@ Gen AI studio / Playground are often **Technology Preview** — need admin enabl
 | G1 | [Admin — OGX + Gen AI studio](#g1) | |
 | G1b | [New project + free GPU](#g1b) | |
 | G2 | [Deploy a chat model](#g2) | ✅ Ready |
-| G3 | [Playground — Hotline 0800-HELP](#g3) | ✅ |
-| G4 | [Out of scope](#g4) | |
+| G3 | [Open WebUI — same model](#g3) | ✅ |
+| G4 | [Streamlit + Python S2I](#g4) | ✅ |
+| G5 | [Playground — Hotline (simplest)](#g5) | ✅ |
+| G6 | [Out of scope](#g6) | |
 
 ---
 
@@ -46,11 +49,17 @@ After the predictive lab, the audience already saw OVMS. Gen AI answers a differ
 
 ### Success looks like
 - Everyone can explain in one sentence: predictive = labels/scores · generative = text
-- A short, funny Playground exchange that needs **no** photo and **no** OVMS
+- Same Hotline persona on **Open WebUI** → **Streamlit** → **Playground** (integrated UI last)
 
 ### How
 
 Demo theme for this lab: **Hotline 0800-HELP** — an absurd IT support bot that answers everyday “help, my thing is broken” tickets with over-the-top scripts (ticket id, root cause, next steps). Lab default: **English** system prompt + English user questions.
+
+**Room arc (after the model is Ready):**
+
+1. **Open WebUI** — full OSS chat UX on the cluster  
+2. **Streamlit + S2I** — tiny custom app via Software Catalog Python builder  
+3. **OpenShift AI Playground** — simplest path (product UI, no YAML)
 
 Optional later (not required): wire OVMS outputs into a *second* prompt. Keep that out of the critical path.
 
@@ -281,58 +290,13 @@ Playground needs a Ready generative endpoint (usually **vLLM**), separate from a
 
 If you still see `Insufficient nvidia.com/gpu`, go back to [G1b](#g1b) and confirm the predictive workbench + OVMS are stopped.
 
-![AI asset endpoints — Ready + Add to playground](docs/screenshots/step-genai-ai-asset-endpoints.png)
+![AI asset endpoints — Ready (use case Chatbot)](docs/screenshots/step-genai-ai-asset-endpoints.png)
 
-> **Where is Add to playground?** Only under **Gen AI studio → AI asset endpoints** (project `genai-hotline`). It does **not** appear on **AI hub → Models → Deployments**.
+> **Add to playground** appears only under **Gen AI studio → AI asset endpoints** — used in [G5](#g5). It does **not** appear on **AI hub → Models → Deployments**.
 
 If Gen AI / GPU is missing on the sandbox, stop and note it — do not force a huge model.
 
----
-
-<a id="g3"></a>
-
-# G3 — Playground — Hotline 0800-HELP
-
-### What we want
-Chat in Playground with a funny **IT hotline** persona — no muffin, no photo, no OVMS.
-
-### Why
-This is the audience moment: generative text on OpenShift AI, instantly understandable.
-
-### Success looks like
-- A short ticket-style reply (ticket id + fake diagnosis + next step)
-- Optional screenshot for the freeze
-
-### How
-
-Requires [G1](#g1) (`ogx: Managed`, `llamastackoperator: Removed`, `genAiStudio: true`) and a Ready AI asset from [G2](#g2).
-
-1. Left nav → **Gen AI studio** → **AI asset endpoints**  
-   - Do **not** use **AI hub → Models → Deployments** (no Playground column there)
-2. Project dropdown → **`genai-hotline`**
-3. Tab **Models** → confirm Status **Ready**, Use case **Chatbot** → **+ Add to playground**
-
-![AI asset endpoints — genai-hotline](docs/screenshots/step-genai-ai-asset-endpoints.png)
-
-4. **Configure playground** modal:
-   - Model selected: `RedHatAI/granite-4.0-h-tiny-FP8-dynamic`
-   - Type = **Inference**
-   - Max tokens ≈ **512** (optional; leave blank for default)
-   - → **Create**
-
-![Configure playground — Inference](docs/screenshots/step-genai-configure-playground.png)
-
-5. Wait for **Creating playground** to finish
-
-![Creating playground](docs/screenshots/step-genai-creating-playground.png)
-
-6. Open **Gen AI studio → Playground**  
-7. Project → **`genai-hotline`** · model → `vllm-inference-1/RedHatAI/granite-4.0-h-tiny-FP8-dynamic`  
-8. **Settings** (gear) → tab **Prompt** → paste the system prompt below → tab **Model** → Temperature ≈ **0.1**, Streaming **On**
-
-![Playground ready — genai-hotline](docs/screenshots/step-genai-playground-ready.png)
-
-9. System prompt (copy-paste into **Prompt**) — lab default is **English** (user questions in English):
+**Shared Hotline system prompt** (reuse in G3 / G4 / G5):
 
 ```text
 You are “Hotline 0800-HELP”, an over-the-top IT support agent.
@@ -344,22 +308,220 @@ For every user message (a short problem description):
 Keep the whole answer under 120 words. No markdown tables.
 ```
 
-10. Try user messages such as:
-   - `My coffee machine prints PDF instead of coffee`
-   - `Wi-Fi works only when I stand on one foot`
-   - `The elevator refuses Mondays`
+**Shared endpoint freeze** (G3–G4 call this Service DNS):
 
-**Expected output (shape):** ticket id + absurd cause + 3 steps + closing line.
+| | Value |
+|--|--------|
+| Base URL | `http://redhataigranite-40-h-tiny-fp8-predictor.genai-hotline.svc.cluster.local:8080/v1` |
+| Model id | `redhataigranite-40-h-tiny-fp8` |
+| API shape | OpenAI `chat.completions` |
 
-![Playground — Hotline 0800-HELP reply](docs/screenshots/step-genai-playground-hotline.png)
+---
 
-**Frozen example:** user `The elevator refuses Mondays` → `HELP-1042` + ridiculous root cause + 3 steps + closing line (EN prompt).
+<a id="g3"></a>
+
+# G3 — Open WebUI (same model)
+
+### What we want
+Host **Open WebUI** on the cluster and chat Hotline against the Ready vLLM endpoint.
+
+### Why
+First external UI: full OSS chat (models, system prompt, history) consuming RHOAI serving — no Gen AI studio yet.
+
+### Success looks like
+- Route opens Open WebUI
+- Model `redhataigranite-40-h-tiny-fp8` answers with ticket + 3 steps + closing line
+- This Deployment uses **no GPU** (GPU stays on the predictor)
+
+### How
+
+Requires [G2](#g2) Ready.
+
+```bash
+oc apply -f apps/open_webui/deploy.yaml
+
+oc -n genai-hotline rollout status deploy/open-webui --timeout=300s
+oc -n genai-hotline get route open-webui -o jsonpath='https://{.spec.host}{"\n"}'
+```
+
+**Expected output**
+
+```text
+deployment.apps/open-webui created
+service/open-webui created
+route.route.openshift.io/open-webui created
+deployment "open-webui" successfully rolled out
+https://open-webui-genai-hotline.apps....
+```
+
+Image pull from `ghcr.io` can take a few minutes the first time.
+
+**In the UI:**
+
+1. First visit → create **admin** account (lab only; `emptyDir` = lost on pod restart)
+2. Confirm model **`redhataigranite-40-h-tiny-fp8`**
+3. Paste the [shared Hotline system prompt](#g2) in Chat Controls / system prompt
+4. Ask `My coffee machine prints PDF instead of coffee`
+
+![Open WebUI — Hotline on same vLLM](docs/screenshots/step-genai-open-webui-hotline.png)
+
+**Frozen:** Route `open-webui-genai-hotline…` · ticket-style reply (e.g. `HELP-847`) · same persona as later steps.
+
+If the pod is **CrashLoop** / permission denied on `/app/backend/data`, the sandbox may need a looser SCC for this namespace (cluster-admin), e.g. default SA `anyuid` — only if logs show UID/filesystem issues.
 
 ---
 
 <a id="g4"></a>
 
-# G4 — Out of scope (this Gen AI lab)
+# G4 — Streamlit + Python S2I (Software Catalog builder)
+
+### What we want
+Deploy a **tiny custom** Streamlit Hotline app with the cluster **Python** S2I builder (Software Catalog) — same vLLM as G3.
+
+### Why
+Second external UI: *your* code + OpenShift build (`requirements.txt` + `.s2i/bin/run`). Shows catalog builder without a custom Template.
+
+### Success looks like
+- `hotline-chat` Route serves Streamlit
+- Same Hotline ticket shape (persona hard-coded in `apps/hotline_chat/app.py`)
+- No GPU on this Deployment
+
+### How
+
+Requires [G2](#g2) Ready. Builder = ImageStream `openshift/python` (e.g. **`3.12-ubi9`**).
+
+### Cleanup previous attempt (if any)
+
+```bash
+oc -n genai-hotline delete all,bc,is,route,cm -l app=hotline-chat --ignore-not-found
+oc -n genai-hotline delete deploy/hotline-chat svc/hotline-chat route/hotline-chat \
+  bc/hotline-chat is/hotline-chat cm/hotline-chat-app --ignore-not-found
+```
+
+### UI path (Software Catalog)
+
+1. Developer perspective → project **`genai-hotline`** → **+Add** → **Software Catalog**
+2. Filter **Python** → select the **Python** builder (not Django sample)
+3. Create application name `hotline-chat` (Git context `apps/hotline_chat` after push, or use CLI binary build below)
+4. Topology → Deployment → **Environment**:
+
+| Name | Value |
+|------|--------|
+| `PORT` | `8080` |
+| `GRANITE_URL` | `http://redhataigranite-40-h-tiny-fp8-predictor.genai-hotline.svc.cluster.local:8080/v1` |
+| `GRANITE_MODEL` | `redhataigranite-40-h-tiny-fp8` |
+| `GRANITE_API_KEY` | `not-needed` |
+
+5. Edge **Route** to service port **8080** if the wizard did not create one.
+
+### CLI path (same builder)
+
+From **repo root**:
+
+```bash
+NS=genai-hotline
+
+oc -n "$NS" new-build --name=hotline-chat --binary --strategy=source \
+  --image-stream=python:3.12-ubi9
+
+oc -n "$NS" start-build hotline-chat --from-dir=apps/hotline_chat --follow
+
+oc -n "$NS" new-app hotline-chat \
+  -e PORT=8080 \
+  -e GRANITE_URL=http://redhataigranite-40-h-tiny-fp8-predictor.genai-hotline.svc.cluster.local:8080/v1 \
+  -e GRANITE_MODEL=redhataigranite-40-h-tiny-fp8 \
+  -e GRANITE_API_KEY=not-needed
+
+oc -n "$NS" create route edge hotline-chat --service=hotline-chat --port=8080 \
+  --dry-run=client -o yaml | oc apply -f -
+
+oc -n "$NS" rollout status deploy/hotline-chat --timeout=300s
+oc -n "$NS" get route hotline-chat -o jsonpath='https://{.spec.host}{"\n"}'
+```
+
+**Expected output (shape)**
+
+```text
+buildconfig.build.openshift.io/hotline-chat created
+...
+Push successful
+deployment "hotline-chat" successfully rolled out
+https://hotline-chat-genai-hotline.apps....
+```
+
+Open the Route → ask `The elevator refuses Mondays`.
+
+![Streamlit Hotline — S2I on same vLLM](docs/screenshots/step-genai-hotline-streamlit.png)
+
+**Frozen:** catalog Python S2I · `PORT=8080` (if logs show `:8501`, set `PORT=8080` and rollout).
+
+**Rebuild after code change:**
+
+```bash
+oc -n genai-hotline start-build hotline-chat --from-dir=apps/hotline_chat --follow
+```
+
+---
+
+<a id="g5"></a>
+
+# G5 — Playground — Hotline (simplest)
+
+### What we want
+Finish on the **built-in** OpenShift AI surface: Gen AI studio → Playground with the same Hotline prompt — no YAML, no Route for a chat UI.
+
+### Why
+Punchline after G3/G4: customers can also use the **integrated** product UI. Same model, zero custom frontend.
+
+### Success looks like
+- Playground chat with ticket-style Hotline reply
+- Screenshot frozen for the room
+
+### How
+
+Requires [G1](#g1) (`genAiStudio: true`) and Ready AI asset from [G2](#g2).
+
+1. Left nav → **Gen AI studio** → **AI asset endpoints**  
+   - Do **not** use **AI hub → Models → Deployments**
+2. Project → **`genai-hotline`**
+3. Tab **Models** → **+ Add to playground**
+
+![AI asset endpoints — Add to playground](docs/screenshots/step-genai-ai-asset-endpoints.png)
+
+4. **Configure playground:** Type = **Inference**, Max tokens ≈ **512** (optional) → **Create**
+
+![Configure playground — Inference](docs/screenshots/step-genai-configure-playground.png)
+
+5. Wait for **Creating playground**
+
+![Creating playground](docs/screenshots/step-genai-creating-playground.png)
+
+6. **Gen AI studio → Playground** → project **`genai-hotline`**
+7. **Settings** → **Prompt** → paste the [shared Hotline system prompt](#g2)  
+   **Model** → Temperature ≈ **0.1**, Streaming **On**
+
+![Playground ready — genai-hotline](docs/screenshots/step-genai-playground-ready.png)
+
+8. Ask e.g. `The elevator refuses Mondays`
+
+![Playground — Hotline reply](docs/screenshots/step-genai-playground-hotline.png)
+
+**Frozen:** `HELP-1042` + absurd cause + 3 steps + closing line.
+
+**Teaching point:** Open WebUI + Streamlit + Playground = three frontends, one RHOAI-served model.
+
+Cleanup UIs (optional):
+
+```bash
+oc -n genai-hotline delete route,svc,deploy -l app=open-webui
+oc -n genai-hotline delete route,svc,deploy,cm,bc,is -l app=hotline-chat --ignore-not-found
+```
+
+---
+
+<a id="g6"></a>
+
+# G6 — Out of scope (this Gen AI lab)
 
 - Using the LLM to classify muffin/chihuahua **images** (that is OVMS in [README-PREDICTIVE.md](README-PREDICTIVE.md))
 - RAG / AutoRAG / MCP (see official RHOAI 3.5 docs — pick a new use case later)
