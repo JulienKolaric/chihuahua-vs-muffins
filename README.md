@@ -42,6 +42,19 @@ Step 12: [12.0](#120-map) · [12.A](#12a-authorino) · [12.B](#12b-limitador) ·
 
 # Step 0 — Prerequisites
 
+### What we want
+Confirm you are logged into the right cluster and project before anything else.
+
+### Why
+Wrong project or missing APIs wastes the whole session. TrustyAI CRDs must exist on the cluster.
+
+### Success looks like
+- `oc whoami` shows your user
+- Project is (or will be) `chihuahua-vs-muffin-jan`
+- DSC exists; TrustyAI API resources appear in `oc api-resources`
+
+### How
+
 ```bash
 oc whoami
 oc project
@@ -61,6 +74,19 @@ oc api-resources | grep -i trustyai | head
 <a id="step-1"></a>
 
 # Step 1 — MinIO + bucket
+
+### What we want
+Stand up an in-cluster S3-compatible store and create the `muffin-chihuahua` bucket.
+
+### Why
+Every later step (dataset, ONNX, pipelines, workbench connection) reads/writes this MinIO.
+
+### Success looks like
+- Deployment `minio` rolled out
+- Routes `minio-api` + `minio-console` exist
+- Bucket `muffin-chihuahua` created (`mc mb`)
+
+### How
 
 ```bash
 oc new-project lab-minio
@@ -157,6 +183,18 @@ mc mb lab/"$BUCKET" --insecure
 
 # Step 2 — Dataset on S3
 
+### What we want
+Download a Kaggle subset and mirror it into MinIO under `train|test` / `chihuahua|muffin`.
+
+### Why
+Training and inference need a shared, versionable dataset on S3 — not only files on one laptop.
+
+### Success looks like
+- Layout on S3: **500** train + **100** test images per class
+- `mc mirror` finished without error
+
+### How
+
 Source: [Muffin vs Chihuahua (Kaggle, CC0)](https://www.kaggle.com/datasets/samuelcortinhas/muffin-vs-chihuahua-image-classification)
 
 ```bash
@@ -194,7 +232,32 @@ Layout on S3: `train|test` / `chihuahua|muffin` — **500** train + **100** test
 
 # Step 3 — Project + connection + Workbench
 
+### What we want
+Create the OpenShift AI project, attach MinIO as a connection, and open a GPU workbench.
+
+### Why
+This is the lab workspace: notebooks, model deploy, and TrustyAI all live in this project.
+
+### Success looks like
+- Project `chihuahua-vs-muffin-jan` visible in the dashboard
+- Connection `minio-lab` listed
+- Workbench `chihuahua-muffin` **Running** and openable
+
+### How
+
 ## Project
+
+### What we want
+Create the OpenShift AI project namespace with dashboard labels.
+
+### Why
+Without `opendatahub.io/dashboard=true`, the project does not show correctly in the RHOAI UI.
+
+### Success looks like
+- Namespace `chihuahua-vs-muffin-jan` exists
+- Visible under Projects in the dashboard
+
+### How
 
 **UI:** Projects → Create project → `chihuahua-vs-muffin-jan`
 
@@ -215,6 +278,18 @@ EOF
 ```
 
 ## Connection `minio-lab`
+
+### What we want
+Register MinIO as an S3 connection the workbench and model deploy can use.
+
+### Why
+Notebooks and OVMS need credentials + endpoint via a dashboard Connection (not ad-hoc env only).
+
+### Success looks like
+- Secret/connection `minio-lab` appears under Connections
+- Endpoint points at `minio.lab-minio.svc.cluster.local:9000`
+
+### How
 
 **UI:** Connections → Create → S3 compatible  
 Endpoint `http://minio.lab-minio.svc.cluster.local:9000` · keys `minio`/`minio123` · bucket `muffin-chihuahua`
@@ -247,6 +322,19 @@ EOF
 
 ## Workbench (UI)
 
+### What we want
+Create and open a Jupyter workbench with storage and the MinIO connection attached.
+
+### Why
+All training / export / TrustyAI notebooks run here, with data on the PVC.
+
+### Success looks like
+- Workbench status **Ready** / **Running**
+- Connection `minio-lab` attached
+- You can open Jupyter
+
+### How
+
 1. Workbenches → **Create workbench**
 2. Name: `chihuahua-muffin`
 3. Image: **Training | Jupyter | PyTorch | CUDA | Python** · version **3.5**
@@ -278,6 +366,18 @@ EOF
 
 # Step 4 — Train + ONNX
 
+### What we want
+Fine-tune ResNet18 in the workbench and upload an OVMS-ready ONNX model to MinIO.
+
+### Why
+Serving needs `models/muffin-chihuahua/1/model.onnx` on S3 before Deploy model works.
+
+### Success looks like
+- Notebooks **01 → 05** completed
+- Object exists: `s3://muffin-chihuahua/models/muffin-chihuahua/1/model.onnx`
+
+### How
+
 Notebook scripts (English comments): [`notebooks/`](notebooks/)
 
 | Order | File | What it does |
@@ -297,6 +397,19 @@ ONNX on S3 (OVMS layout): `s3://muffin-chihuahua/models/muffin-chihuahua/1/model
 <a id="step-5"></a>
 
 # Step 5 — Deploy model (OVMS)
+
+### What we want
+Deploy the ONNX model with OpenVINO Model Server so the project has a live InferenceService.
+
+### Why
+Guardrails, TrustyAI capture, and demos all call this predictor — no deploy, no later steps.
+
+### Success looks like
+- InferenceService `muffin-chihuahua` Ready=`True`
+- Predictor pod `2/2 Running`
+- External route exists
+
+### How
 
 **UI:** Projects → `chihuahua-vs-muffin-jan` → **Deployments** → **Deploy model**
 
@@ -353,6 +466,19 @@ Deploy → wait until status **Ready**.
 
 # Step 6 — Call the API
 
+### What we want
+Prove inference works from the workbench (and optionally from your laptop).
+
+### Why
+Validates ports, URLs, and model metadata before adding guardrails or TrustyAI logging.
+
+### Success looks like
+- Metadata HTTP 200; input `[1,3,224,224]`, output `[1,2]`
+- Notebook `06_infer` shows sensible muffin/chihuahua scores
+- Internal calls use **:8888** (not :8080)
+
+### How
+
 Notebook: [`notebooks/06_infer.ipynb`](notebooks/06_infer.ipynb)
 
 Shows each image + a probability bar chart (`pred` vs `true`).
@@ -405,6 +531,19 @@ curl -sS "http://muffin-chihuahua-predictor.chihuahua-vs-muffin-jan.svc.cluster.
 
 # Step 7 — Confidence thresholds (before TrustyAI)
 
+### What we want
+Add a client-side confidence/margin guardrail so OOD images can be marked `uncertain`.
+
+### Why
+A 2-class model always picks a label. TrustyAI later *observes* drift; this step *soft-blocks* weak singles.
+
+### Success looks like
+- In-domain test images mostly **ACCEPTED**
+- OOD (tea cup, etc.) mostly **UNCERTAIN**
+- Defaults: `CONF_MIN=0.80`, `MARGIN_MIN=0.25`
+
+### How
+
 A 2-class model **always** returns `chihuahua` or `muffin`.  
 Out-of-domain photos (tea cup, cat, car…) still get a label — that is expected.
 
@@ -448,7 +587,7 @@ Source of truth: [RHODS 3.5 — Monitoring your AI systems (PDF)](https://docs.r
 **How to use this guide**
 
 1. Copy-paste each command block **in order**.
-2. Read **What we want** / **Why** / **Success looks like** before running anything.
+2. Read **What we want** / **Why** / **Success looks like** / **How** before running anything.
 3. After each command, compare your terminal to **Expected output** (pod names, ages, hosts, and requestIds will differ; the *shape* and key words must match).
 4. Only go to the next step when Success is met.
 
@@ -504,6 +643,8 @@ TrustyAI is an optional platform component. If it is not **Managed**, creating a
 - Operator deployment is Running
 - DSC shows `trustyai: Managed`
 
+### How
+
 ```bash
 oc -n redhat-ods-applications get deploy trustyai-service-operator-controller-manager
 oc get dsc -A -o jsonpath='{range .items[*]}{.metadata.name}: {.spec.components.trustyai.managementState}{"\n"}{end}'
@@ -536,6 +677,8 @@ The Red Hat doc is explicit: MariaDB must **already exist**. TrustyAI will not c
 ### Success looks like
 - Pod `mariadb-…` is `1/1 Running`
 - Service `mariadb-service` listens on port `3306`
+
+### How
 
 ```bash
 oc project chihuahua-vs-muffin-jan
@@ -674,6 +817,8 @@ Doc examples sometimes say `db-credentials`. On this operator the Secret must be
 ### Success looks like
 `oc get secret …` shows `DATA: 7` (seven keys).
 
+### How
+
 ```bash
 oc apply -f - <<'EOF'
 apiVersion: v1
@@ -725,6 +870,8 @@ Put `databaseConfigurations` under **`spec.storage`** (that is what the CRD expe
 - Pod `trustyai-service-…` is `2/2 Running`
 - Route `trustyai-service` exists
 
+### How
+
 ```bash
 oc apply -f - <<'EOF'
 apiVersion: trustyai.opendatahub.io/v1
@@ -768,7 +915,7 @@ trustyai-service   trustyai-service-chihuahua-vs-muffin-jan.apps.…          �
 ### What we want
 Wire the **copy path**: every model prediction is duplicated to TrustyAI over HTTPS, with a trusted certificate.
 
-### Why (plain language)
+### Why
 When someone calls the model, a small sidecar (KServe **agent**) also forwards the request/response to TrustyAI — like CCTV on the API.
 
 That forward uses **HTTPS**. Without the CA bundle:
@@ -783,6 +930,8 @@ This step is “make the camera cable work”.
 - Cluster logger config mentions `kserve-logger-ca-bundle` + `service-ca.crt`
 - Project ConfigMap contains injected `service-ca.crt`
 - InferenceService has `logger.mode: all` pointing at TrustyAI HTTPS URL
+
+### How
 
 ### 5a — Check cluster logger config
 
@@ -864,6 +1013,8 @@ The TrustyAI Route is protected by OpenShift OAuth. Without a bearer token, exte
 - `TRUSTY_ROUTE` prints a real hostname
 - `curl …/info` returns HTTP success (body may still be `{}` — that only means “no data yet”)
 
+### How
+
 ```bash
 export TOKEN=$(oc whoami -t)
 export TRUSTY_ROUTE=https://$(oc -n chihuahua-vs-muffin-jan get route/trustyai-service --template={{.spec.host}})
@@ -904,6 +1055,8 @@ This step answers: *“Is the camera actually recording?”*
 
 ### Success looks like
 `/info` contains `muffin-chihuahua` with `observations ≥ 1`
+
+### How
 
 **Workbench:** run [`notebooks/08b_trustyai_capture_json.ipynb`](notebooks/08b_trustyai_capture_json.ipynb)
 
@@ -956,6 +1109,8 @@ This lab ALTER is mandatory for the **image** path with DATABASE storage.
 ### Success looks like
 Column type is `longblob`
 
+### How
+
 ```bash
 NS=chihuahua-vs-muffin-jan
 oc -n "$NS" exec deploy/mariadb -- \
@@ -999,6 +1154,8 @@ Validated path: build JSON on the workbench → copy to laptop → upload from *
 ### Success looks like
 - Four times: `1 datapoints successfully added to muffin-chihuahua data.`
 - `/info/tags` → `{"muffin-chihuahua":{"TRAINING":4}}`
+
+### How
 
 ### 9a — Workbench
 
@@ -1110,6 +1267,8 @@ Class order matches training ImageFolder: `['chihuahua', 'muffin']` → `output-
 - Message: `Feature and output name mapping successfully applied`
 - `/info` shows `nameMapping` with `chihuahua` / `muffin` / `image`
 
+### How
+
 ```bash
 export TOKEN=$(oc whoami -t)
 export TRUSTY_ROUTE=https://$(oc -n chihuahua-vs-muffin-jan get route/trustyai-service --template={{.spec.host}})
@@ -1169,6 +1328,8 @@ Scheduling creates a Prometheus series you can plot. Save the returned **`reques
 - Optional one-shot with only TRAINING → both scores ≈ `1.0` (normal: reference compared to itself)
 - `/info` shows `metricCounts.MEANSHIFT: 1`
 
+### How
+
 ```bash
 export TOKEN=$(oc whoami -t)
 export TRUSTY_ROUTE=https://$(oc -n chihuahua-vs-muffin-jan get route/trustyai-service --template={{.spec.host}})
@@ -1219,6 +1380,8 @@ This step connects the camera’s numbers to the dashboard everyone looks at.
 
 ### Success looks like
 Namespace `openshift-user-workload-monitoring` has `prometheus-user-workload-0` **Ready**
+
+### How
 
 ```bash
 oc apply -f - <<'EOF'
@@ -1282,6 +1445,8 @@ CLI proofs are for us. The sync / demo moment is visual: a chart that moves when
 ### Success looks like
 A graph with series (at least `chihuahua` and `muffin`) — values near 1 right after TRAINING-only.
 
+### How
+
 1. Perspective **Developer**
 2. Project **`chihuahua-vs-muffin-jan`**
 3. **Observe → Metrics** → custom query
@@ -1327,6 +1492,8 @@ TrustyAI still does **not** block requests. It only observes. (Blocking weak sin
 ### Success looks like
 Observe curves drop after flood 1, then rise after flood 2 (wait 1–2 minutes between floods).
 
+### How
+
 **Workbench:** [`notebooks/09_trustyai_flood.ipynb`](notebooks/09_trustyai_flood.ipynb)
 
 **Expected notebook output:** lines like `noise 200`, `muffin/….jpg 200`, `chihuahua/….jpg 200` (HTTP 200 per image).
@@ -1357,31 +1524,24 @@ Keep volumes small (each logged image is heavy in storage).
 
 ## 8.15 — Reset / uninstall (facilitator)
 
-Two levels:
+### What we want
+Wipe TrustyAI data (soft) or remove TrustyAI + MariaDB entirely (full) so the room can replay Step 8.
+
+### Why
+After a failed demo or a stuck DB secret, colleagues need a known-clean path without hunting objects by hand.
+
+### Success looks like
+- Soft: `/info` and `/info/tags` → `{}`; MariaDB + TrustyAIService remain
+- Full: no TrustyAIService, no MariaDB deploy/secret, no CA bundle → restart at §8.1
+
+### How
+
+Two levels (DATABASE path — no TrustyAI PVC):
 
 | Goal | Script | What remains |
 |------|--------|----------------|
-| Empty data, redo TRAINING + MeanShift + floods | [`scripts/trustyai_reset.sh`](scripts/trustyai_reset.sh) | TrustyAIService + logger stay |
-| **Full clean** | [`scripts/trustyai_uninstall.sh`](scripts/trustyai_uninstall.sh) | Nothing — redo from §8.1 |
-
-Also remove MariaDB if you used the DATABASE path:
-
-```bash
-oc -n chihuahua-vs-muffin-jan delete deploy/mariadb svc/mariadb-service pvc/mariadb-data secret/mariadb-root secret/trustyai-service-db-credentials --ignore-not-found
-```
-
-**Expected output:**
-
-```text
-deployment.apps "mariadb" deleted
-service "mariadb-service" deleted
-persistentvolumeclaim "mariadb-data" deleted
-secret "mariadb-root" deleted
-secret "trustyai-service-db-credentials" deleted
-
-# ignore-not-found may print nothing for missing objects.
-```
-
+| Empty data, redo from §8.7 | [`scripts/trustyai_reset.sh`](scripts/trustyai_reset.sh) | TrustyAIService + logger + MariaDB stay (tables truncated) |
+| **Full clean** | [`scripts/trustyai_uninstall.sh`](scripts/trustyai_uninstall.sh) | Nothing — redo from §8.1 (recreates MariaDB) |
 
 ```bash
 export NS=chihuahua-vs-muffin-jan
@@ -1390,16 +1550,20 @@ bash scripts/trustyai_reset.sh
 bash scripts/trustyai_uninstall.sh
 ```
 
-**Expected output:**
+**Expected output (soft reset):**
 
 ```text
-# Soft reset: clears TrustyAI data; service stays.
-# Full uninstall: removes TrustyAIService, logger, CA, …
-# Then restart from §8.1 (and §8.2 MariaDB if fully removed).
+=== 1) Delete all MeanShift schedules ===
+  removed …
+=== 2) Truncate all tables in MariaDB (trustyai_service) ===
+  truncate DataframeRow_Values
+  …
+=== 4) Restart TrustyAI pod …
+/info → {}
+/info/tags → {}
 ```
 
-
-Then colleagues start again at **§8.1**.
+**Expected output (full uninstall):** TrustyAIService, route, MariaDB deploy/PVC/secrets, CA bundle gone → restart at **§8.1**.
 
 
 ---
@@ -1407,6 +1571,18 @@ Then colleagues start again at **§8.1**.
 <a id="step-9"></a>
 
 # Step 9 — Pipelines
+
+### What we want
+Show that notebook work can be packaged as a repeatable OpenShift AI pipeline run.
+
+### Why
+Hand-clicked notebooks do not scale; pipelines answer “can the platform rerun this?”
+
+### Success looks like
+- Pipeline server **Ready**
+- Smoke run `lab_smoke_hello.yaml` **Succeeded**
+
+### How
 
 ## Why this step (plain language)
 
@@ -1430,6 +1606,18 @@ Docs: [Managing AI pipelines (RHOAI 3.5)](https://docs.redhat.com/en/documentati
 <a id="91-configure"></a>
 
 ## 9.1 Configure pipeline server (do this first)
+
+### What we want
+Configure the project pipeline server against MinIO so runs can store artifacts.
+
+### Why
+Without a Ready pipeline server, imports and runs never start.
+
+### Success looks like
+- Pipeline server status **Ready**
+- Related `ds-pipeline` / DB pods Running
+
+### How
 
 **UI:** OpenShift AI → project **`chihuahua-vs-muffin-jan`** → **Pipelines** → **Configure pipeline server**
 
@@ -1455,6 +1643,18 @@ Pods related to `ds-pipeline` / `mariadb` (or equivalent) should be **Running**.
 <a id="92-smoke"></a>
 
 ## 9.2 Smoke run — what `lab_smoke_hello.yaml` does
+
+### What we want
+Import and run the tiny smoke pipeline that only prints a hello line in a pod.
+
+### Why
+Proves the plumbing before any heavy train/export pipeline.
+
+### Success looks like
+- Run status **Succeeded**
+- Pod log contains the hello muffin message
+
+### How
 
 ### What this pipeline does (plain language)
 
@@ -1532,6 +1732,18 @@ python3 -m venv .venv-kfp && .venv-kfp/bin/pip install 'kfp>=2.7,<3'
 
 # Step 10 — AutoML (tabular)
 
+### What we want
+Run a short AutoML experiment on a toy tabular “muffin vs chihuahua” CSV.
+
+### Why
+Shows the platform AutoML path next to our hand-trained image model — different UI, same project story.
+
+### Success looks like
+- AutoML run finishes
+- You can open/compare top models in the UI
+
+### How
+
 ## Why this step (plain language)
 
 Step 4–6 built a **vision** model (photos → muffin / chihuahua).  
@@ -1561,6 +1773,18 @@ Status: **Developer Preview** on this product line.
 <a id="101-data"></a>
 
 ## 10.1 Lab CSV (toy tabular “muffin vs chihuahua”)
+
+### What we want
+Provide / load the small CSV used as AutoML input.
+
+### Why
+AutoML needs a tabular dataset; we keep it tiny so the run fits the lab slot.
+
+### Success looks like
+- CSV available to the AutoML wizard
+- Target column understood by the UI
+
+### How
 
 **Why a CSV?** AutoML needs a **table**, not photos. Each row is a fake example with simple scores (0–1). The column **`label`** is the answer (`muffin` / `chihuahua`). AutoML learns to predict that column — a platform demo, separate from the vision OVMS model.
 
@@ -1595,6 +1819,17 @@ mc cp data/automl/train.csv lab/muffin-chihuahua/automl-demo/train.csv --insecur
 
 ## 10.2 Create the AutoML run (validated)
 
+### What we want
+Create an AutoML run with the validated “Faster” preset settings.
+
+### Why
+Wrong size/timeout presets burn the slot; these values were validated in the room.
+
+### Success looks like
+- Run created and progresses to completion (or a clear scored result)
+
+### How
+
 AutoML lives under **Develop & train → AutoML** (not inside the project tabs). Select project **`chihuahua-vs-muffin-jan`**.
 
 **First time only — enable pipelines:**
@@ -1616,6 +1851,17 @@ AutoML lives under **Develop & train → AutoML** (not inside the project tabs).
 <a id="103-read"></a>
 
 ## 10.3 How to read the result (validated)
+
+### What we want
+Read the AutoML leaderboard and know what “good enough” looks like for the demo.
+
+### Why
+The point is the platform story, not chasing SOTA on a toy CSV.
+
+### Success looks like
+- You can point at top models / metric in the UI and explain them in one sentence
+
+### How
 
 **In plain language:** AutoML tried several models and ranked them. The leaderboard is the podium.
 
@@ -1654,6 +1900,18 @@ AutoML lives under **Develop & train → AutoML** (not inside the project tabs).
 
 # Step 11 — Gen AI — Muffin Court
 
+### What we want
+Deploy a generative model and judge muffin-vs-chihuahua jokes in the Playground.
+
+### Why
+Closes the lab with Gen AI Studio after the predictive path — same project, new surface.
+
+### Success looks like
+- Generative model Ready
+- Playground chat returns a judge-style answer
+
+### How
+
 <a id="111-why"></a>
 
 ## Why this step (plain language)
@@ -1683,6 +1941,17 @@ Docs (3.5): Gen AI studio / playground are often **Technology Preview** — need
 <a id="110-admin-ogx"></a>
 
 ## 11.0 Admin — enable Playground (OGX)
+
+### What we want
+Enable the OpenShift AI Playground / Llama Stack prerequisites (admin).
+
+### Why
+Without OGX/Playground enabled, §11.2 has nowhere to chat.
+
+### Success looks like
+- Playground entry available in the UI for the project
+
+### How
 
 Playground needs **both**:
 
@@ -1724,6 +1993,18 @@ Wait until `OGXReady=True` / DSC `Ready` (`oc get dsc default-dsc -w`). Then Gen
 
 ## 11.1 Deploy a generative model (you play)
 
+### What we want
+Deploy a small generative model suitable for the Playground demo.
+
+### Why
+Playground needs a Ready LLM serving runtime in the project (or cluster catalog path you use).
+
+### Success looks like
+- Model deployment Ready
+- Selectable in Playground
+
+### How
+
 **UI path (typical RHOAI 3.5):**
 
 1. Project **`chihuahua-vs-muffin-jan`** → **Deployments** → **Deploy model**
@@ -1751,6 +2032,18 @@ If Gen AI / GPU is missing on the sandbox, stop here and note it in the team syn
 <a id="113-playground"></a>
 
 ## 11.2 Playground — Judge Muffin Court
+
+### What we want
+Run the Muffin Court judge prompt in Playground and show a fun verdict.
+
+### Why
+This is the audience moment for Gen AI — not another notebook cell.
+
+### Success looks like
+- Chat response with a clear muffin/chihuahua “ruling”
+- Screenshot optional for the freeze
+
+### How
 
 Requires **[11.0](#110-admin-ogx)** (`ogx: Managed` and `llamastackoperator: Removed`). If Playground is missing, check that conflict first.
 
@@ -1790,6 +2083,18 @@ OUT OF ORDER / HUMAN REVIEW — do not force muffin or chihuahua.
 
 # Step 12 — Protect the endpoint (Authorino + Limitador)
 
+### What we want
+Put AuthN and rate limits in front of the predictive endpoint.
+
+### Why
+Demo that platform protection is more than notebook confidence checks.
+
+### Success looks like
+- Unauthenticated calls fail
+- Authenticated calls work until rate limit kicks in
+
+### How
+
 <a id="120-map"></a>
 
 ## Why this step (plain language — SA view)
@@ -1822,6 +2127,18 @@ Cluster notes (sandbox validated): Authorino **Operator** is already present; Co
 <a id="12a-authorino"></a>
 
 ## 12.A — Authorino: require a token
+
+### What we want
+Require a valid token on the model endpoint via Authorino.
+
+### Why
+Open external routes are fine for early lab steps; production story needs AuthN.
+
+### Success looks like
+- Request without token denied
+- Request with token reaches the model
+
+### How
 
 ### Baseline (before auth)
 
@@ -1940,6 +2257,17 @@ oc -n chihuahua-vs-muffin-jan get pods -l serving.kserve.io/inferenceservice=muf
 
 ## 12.B — Limitador: rate limit (Connectivity Link)
 
+### What we want
+Apply a rate limit so burst traffic is throttled.
+
+### Why
+Auth alone does not stop floods; Limitador is the “slow down” layer.
+
+### Success looks like
+- Excess requests receive rate-limit responses after the configured threshold
+
+### How
+
 ### Why another component?
 
 A stolen or shared token can still **flood** a GPU. Limitador counts requests in a time window and returns **429 Too Many Requests** when over the limit.
@@ -1997,6 +2325,18 @@ done
 <a id="12c-cleanup"></a>
 
 ## 12.C — Cleanup / replay
+
+### What we want
+Remove Authorino/Limitador lab objects so the endpoint can be unprotected again.
+
+### Why
+Next room or Step 6/8 demos should not inherit surprise 401/429.
+
+### Success looks like
+- Protection CRs/policies gone
+- Plain infer works again as in Step 6
+
+### How
 
 **Soft (keep operators):**
 

@@ -1,0 +1,29 @@
+---
+description: Lab doc steps must use What/Why/Success/How blocks
+alwaysApply: true
+---
+
+# Lab documentation step blocks
+
+Whenever you **add or expand** a step in project docs (`README.md`, `docs/**/*.md`, lab guides), structure it with these four sections — in this order:
+
+### What we want
+One or two sentences: the concrete outcome for the reader (not the command).
+
+### Why
+Why this step exists in plain language — risk if skipped, what it unlocks next.
+
+### Success looks like
+Checkable signals (pod Ready, HTTP body shape, UI chart, file present). Prefer bullets.
+
+### How
+The copy-paste commands / UI clicks. Prefer a ` ```bash ` block (or numbered UI steps).  
+After each command block, add **Expected output** (` ```text `) with the shape of a good run; note that names/ages/hosts/ids may differ.
+
+## Rules
+
+- Do not dump bare commands without the four headings.
+- Match the tone of Step 8 in `README.md` (facilitator-friendly, room-readable).
+- Keep **How** as the only place for long YAML/scripts; keep What/Why short.
+- When editing an existing step that already has What/Why/Success, add **How** if commands were left floating under Success.
+- Tiny one-liners (e.g. a single verify) can stay compact, but still use the four headings if it is a new numbered step (§x.y).
