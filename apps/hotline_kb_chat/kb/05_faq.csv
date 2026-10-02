@@ -1,0 +1,5 @@
+document_id,question,answer
+faq-ssid,What is the corporate Wi-Fi SSID for B-Wing?,Use SSID CAMPUS-SECURE for B-Wing. Guest SSID is not supported for BalanceAware troubleshooting.
+faq-coffee-fw,Which brew firmware is approved after a PDF incident?,Reinstall brew firmware espresso-os-3.2 after removing office-print-bundle-2024.
+faq-lift-code,What door code appears when the elevator refuses Mondays?,Door code NO-MON appears when the obsolete Monday calendar block is active.
+faq-hotline-hours,What are Hotline 0800-HELP hours?,Hotline 0800-HELP is staffed 08:00-20:00 local time on business days; P1 pages on-call after hours.

@@ -23,7 +23,9 @@ Playground / Gen AI studio RAG is **Technology Preview**.
 | R2 | [Before/after without Knowledge](#r2) | |
 | R3 | [Playground Knowledge upload](#r3) | ✅ |
 | R4 | [Grounded Hotline prompts](#r4) | ✅ HIT elevator · MISS fridge |
-| R5 | [Out of scope / next](#r5) | Playground → real hotline app |
+| R5 | [Playground → real hotline app](#r5) | map |
+| R6 | [Streamlit Hotline KB app](#r6) | ✅ `hotline-kb-chat` + ConfigMap |
+| R7 | [Large KB map (pgvector / Milvus)](#r7) | map only |
 
 ---
 
@@ -329,43 +331,207 @@ Optional freeze: `docs/screenshots/step-genai-rag-after.png`
 
 <a id="r5"></a>
 
-# R5 — Out of scope / next (Playground → real hotline app)
+# R5 — Playground → real hotline app (map)
 
 ### What we want
-Leave the room with a clear map from **Playground Knowledge** (what we just validated) to a **hotline app** callers actually use — without building that app in this hour.
+Name the split: Playground proves grounded answers; a **chat Route** is what callers open.
 
 ### Why
-Playground is an experimentation surface (prompt, Knowledge upload, HIT/MISS). End users never open Gen AI studio. Production needs the same three pieces behind a normal chat UI: **LLM endpoint + vector store + retrieve-then-generate** (plus your system prompt).
+End users never open Gen AI studio Settings.
 
 ### Success looks like
-- You can name the split: Playground = prove RAG; app = ship RAG
-- Backlog pointers match RHOAI 3.5 docs (OGX RAG / AutoRAG)
+- You can say: same model + same runbooks + search-then-answer, behind a normal UI
 
 ### How
 
-**This lab stops at Playground Knowledge.** What stays the same in “real life”:
+| Piece (Playground) | Lab app ([R6](#r6)) | Large KB later ([R7](#r7)) |
+|--------------------|---------------------|---------------------------|
+| vLLM Granite | Same `/v1` endpoint | Same |
+| Knowledge upload | **ConfigMap** `hotline-kb` | Files in S3 / share → ingest job |
+| HIT/MISS prompt | Hard-coded in the app | Same idea in app / OGX |
+| Search | Local text match in the app | **pgvector** or **Milvus** (nearest passages) |
 
-| Piece (validated here) | In a hotline app |
-|------------------------|------------------|
-| vLLM Granite in `genai-hotline` | Same OpenAI-compatible `/v1` endpoint |
-| Operator-uploaded runbooks | Ingest into a vector store (keep `data/hotline-kb`) |
-| Grounded HIT/MISS system prompt | Baked into the app (or OGX agent), not a Settings tab users edit |
-| Playground Knowledge / `knowledge_search` | App or **OGX RAG stack** does retrieve → inject context → generate |
+---
 
-**Official path on OpenShift AI 3.5** ([Building RAG applications with OGX](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/building_rag_applications_with_ogx/index) — Technology Preview):
+<a id="r7"></a>
 
-1. **OGXServer** wired to the inference model + vector store (pgvector / Milvus)  
-2. **Ingest** Hotline KB with Docling (pipeline or notebook) so embeddings stay in sync  
-3. **Query** that stack from your UI (extend [`apps/hotline_chat`](apps/hotline_chat) / Open WebUI, or a thin agent front-end) — callers only see the chat
+# R7 — Large KB map (pgvector / Milvus) — not hands-on yet
 
-**Next (separate sessions):**
+### What we want
+Know how the story scales when ConfigMap is too small — without deploying it in this session.
 
-| Topic | Why |
-|-------|-----|
-| **AutoRAG** on `data/hotline-kb` + `eval/golden_questions.json` | Optimize chunking/embedding/retrieval before you hard-wire the app ([AutoRAG docs](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/working_with_autorag/index)) |
-| **RAG with OGX** (Docling ingest, remote pgvector/Milvus) | App-style pipeline beyond Playground experimentation |
-| **Open WebUI / Streamlit + RAG** | Same files + grounded prompt; UI employees actually open |
-| **Day-summary agent + MCP** | Later autonomous agent idea |
+### Why
+A real hotline may have hundreds of PDFs/runbooks. You need storage + an index + “fetch a few useful pages per question”.
+
+### Success looks like
+- You can draw: documents → index job → vector DB → chat app → LLM
+- You know Playground already created **`genai-pgvector`** in this project (experiment store); a production-style stack often uses a **managed** remote pgvector or Milvus via OGX
+
+### How
+
+**Flow (plain language):**
+
+1. **Documents** live outside the chat Deployment (S3, Git, file share).  
+2. A **job / notebook** (Docling on OpenShift AI) reads them, splits them, and writes searchable pieces into **pgvector** or **Milvus**.  
+3. The **chat app** (or OGXServer) asks the vector DB for the closest pieces, then calls **vLLM** with those pieces + your Hotline prompt.  
+4. When docs change, re-run the ingest job — not a full app rewrite.
+
+**On this cluster today:** `genai-pgvector` already exists (Playground). Reusing it for a custom app is possible but couples you to the playground store. Official app path: [Building RAG applications with OGX](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/building_rag_applications_with_ogx/index) (OGXServer + remote Milvus **or** remote PostgreSQL/pgvector + Docling ingest) — Technology Preview. Optional warm-up: **AutoRAG** on `data/hotline-kb/eval/golden_questions.json`.
+
+**Next session (when you want hands-on):** pick Milvus **or** remote pgvector from that doc, ingest Hotline (or a bigger corpus), point a thin UI at the query API.
+
+---
+
+<a id="r6"></a>
+
+# R6 — Streamlit Hotline KB app (`hotline-kb-chat`)
+
+### What we want
+Deploy a **new** Streamlit app that callers can open: it searches the Hotline runbooks, then answers with the same Granite model. Name: **`hotline-kb-chat`**. Runbooks live in a **ConfigMap** (edit without rebuilding the image). Keep older `hotline-chat` as the “LLM only” contrast.
+
+### Why
+Show the Playground lesson on a real Route. Separating text (ConfigMap) from code (image) matches how operators update procedures.
+
+### Success looks like
+- Route `hotline-kb-chat` opens **Hotline 0800-HELP — KB**
+- Sidebar shows `KB_DIR=/etc/hotline-kb` and the 5 files
+- Elevator question → HIT · fridge → MISS
+- Changing a file in the ConfigMap does **not** require `start-build`
+
+### How
+
+Requires [G2](README-GENAI.md#g2) Ready. Code: [`apps/hotline_kb_chat/`](apps/hotline_kb_chat/). Repo folder `kb/` is only the **source** used to create/update the ConfigMap (and a local fallback if `KB_DIR` is unset).
+
+#### 1) Cleanup previous attempt (if any)
+
+```bash
+NS=genai-hotline
+
+oc -n "$NS" delete all,bc,is,route -l app=hotline-kb-chat --ignore-not-found
+oc -n "$NS" delete deploy/hotline-kb-chat svc/hotline-kb-chat route/hotline-kb-chat \
+  bc/hotline-kb-chat is/hotline-kb-chat --ignore-not-found
+oc -n "$NS" delete configmap/hotline-kb --ignore-not-found
+```
+
+**Expected output**
+
+```text
+No resources found
+# or delete confirmations
+```
+
+#### 2) ConfigMap = the knowledge base
+
+From **repo root**:
+
+```bash
+NS=genai-hotline
+
+oc -n "$NS" create configmap hotline-kb \
+  --from-file=apps/hotline_kb_chat/kb/ \
+  --dry-run=client -o yaml | oc apply -f -
+
+oc -n "$NS" label configmap/hotline-kb app=hotline-kb-chat --overwrite
+oc -n "$NS" get configmap hotline-kb -o jsonpath='{.data}' | tr ',' '\n' | head
+```
+
+**Expected output (shape)**
+
+```text
+configmap/hotline-kb created
+# keys include 01_wifi_one_foot.txt, 03_elevator_monday.txt, …
+```
+
+#### 3) Build + deploy the app (code only)
+
+```bash
+NS=genai-hotline
+
+oc -n "$NS" new-build --name=hotline-kb-chat --binary --strategy=source \
+  --image-stream=python:3.12-ubi9
+
+oc -n "$NS" start-build hotline-kb-chat --from-dir=apps/hotline_kb_chat --follow
+
+oc -n "$NS" new-app hotline-kb-chat \
+  -e PORT=8080 \
+  -e KB_DIR=/etc/hotline-kb \
+  -e GRANITE_URL=http://redhataigranite-40-h-tiny-fp8-predictor.genai-hotline.svc.cluster.local:8080/v1 \
+  -e GRANITE_MODEL=redhataigranite-40-h-tiny-fp8 \
+  -e GRANITE_API_KEY=not-needed
+
+oc -n "$NS" set volume deploy/hotline-kb-chat --add --name=hotline-kb \
+  --type=configmap --configmap-name=hotline-kb \
+  --mount-path=/etc/hotline-kb
+
+oc -n "$NS" create route edge hotline-kb-chat --service=hotline-kb-chat --port=8080 \
+  --dry-run=client -o yaml | oc apply -f -
+
+oc -n "$NS" label deploy/hotline-kb-chat svc/hotline-kb-chat route/hotline-kb-chat \
+  bc/hotline-kb-chat is/hotline-kb-chat app=hotline-kb-chat --overwrite
+
+oc -n "$NS" rollout status deploy/hotline-kb-chat --timeout=300s
+oc -n "$NS" get route hotline-kb-chat -o jsonpath='https://{.spec.host}{"\n"}'
+```
+
+**Expected output (shape)**
+
+```text
+...
+deployment "hotline-kb-chat" successfully rolled out
+https://hotline-kb-chat-genai-hotline.apps....
+```
+
+#### 4) Test in the browser
+
+1. Open the Route → sidebar `KB_DIR=/etc/hotline-kb`  
+2. `The elevator refuses Mondays` → HIT  
+3. `My fridge is singing opera` → MISS  
+
+![Streamlit Hotline KB](docs/screenshots/step-genai-rag-hotline-kb-chat.png)
+
+#### Already deployed? Attach ConfigMap only
+
+If the app is already running **without** the ConfigMap (runbooks only in the image), from repo root:
+
+```bash
+NS=genai-hotline
+
+oc -n "$NS" create configmap hotline-kb \
+  --from-file=apps/hotline_kb_chat/kb/ \
+  --dry-run=client -o yaml | oc apply -f -
+
+oc -n "$NS" set env deploy/hotline-kb-chat KB_DIR=/etc/hotline-kb
+oc -n "$NS" set volume deploy/hotline-kb-chat --add --name=hotline-kb \
+  --type=configmap --configmap-name=hotline-kb \
+  --mount-path=/etc/hotline-kb --overwrite
+
+# Rebuild once so the app reads KB_DIR (if you still run the first image)
+oc -n "$NS" start-build hotline-kb-chat --from-dir=apps/hotline_kb_chat --follow
+oc -n "$NS" rollout status deploy/hotline-kb-chat --timeout=300s
+```
+
+#### Update a runbook (no image rebuild)
+
+Edit a file under `apps/hotline_kb_chat/kb/`, then:
+
+```bash
+NS=genai-hotline
+
+oc -n "$NS" create configmap hotline-kb \
+  --from-file=apps/hotline_kb_chat/kb/ \
+  --dry-run=client -o yaml | oc apply -f -
+
+# ConfigMap files refresh in the pod within ~1 min; restart if the sidebar still looks old
+oc -n "$NS" rollout restart deploy/hotline-kb-chat
+```
+
+#### Rebuild after **code** change only
+
+```bash
+oc -n genai-hotline start-build hotline-kb-chat --from-dir=apps/hotline_kb_chat --follow
+```
+
+**Limits (lab honesty):** ConfigMaps are fine for a few small text files (~1 MiB cap). Big libraries → [R7](#r7) (pgvector / Milvus / OGX).
 
 ---
 

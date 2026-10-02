@@ -6,7 +6,7 @@ Hands-on labs on **one cluster / one team**. Two independent journeys (plus opti
 |-----|------|-------------------|
 | **Predictive** — Chihuahua vs Muffin | [`README-PREDICTIVE.md`](README-PREDICTIVE.md) | S3 → train → **OVMS** → guardrails → **TrustyAI** → pipelines → **AutoML** |
 | **Gen AI** — Playground / OGX | [`README-GENAI.md`](README-GENAI.md) | **`genai-hotline`** · vLLM Hotline · **Open WebUI → Streamlit/S2I → Playground** |
-| **Gen AI — Hotline KB RAG** | [`README-GENAI-RAG.md`](README-GENAI-RAG.md) | Same model + **Playground Knowledge** (runbooks) · AutoRAG later |
+| **Gen AI — Hotline KB RAG** | [`README-GENAI-RAG.md`](README-GENAI-RAG.md) | Playground Knowledge → **`hotline-kb-chat`** Streamlit · AutoRAG later |
 
 | | Predictive | Gen AI |
 |--|------------|--------|
@@ -21,7 +21,8 @@ Hands-on labs on **one cluster / one team**. Two independent journeys (plus opti
 | Lab | File |
 |-----|------|
 | TrustyAI Step 8 pointer | [`docs/trustyai-db-install/GUIDE.md`](docs/trustyai-db-install/GUIDE.md) → predictive README |
-| **Later:** AutoRAG on Hotline KB | After [`README-GENAI-RAG.md`](README-GENAI-RAG.md) R4 — use `data/hotline-kb/eval/golden_questions.json` |
+| **Later:** Large KB (pgvector / Milvus / OGX) | Map in [`README-GENAI-RAG.md`](README-GENAI-RAG.md) R7 — after ConfigMap lab app |
+| **Later:** AutoRAG on Hotline KB | After R4 / R6 — use `data/hotline-kb/eval/golden_questions.json` |
 | **Later:** Autonomous day-summary agent | Agent on OpenShift AI that synthesizes the user’s daily events (calendar / mail / tools via MCP) |
 
 ### How to use
