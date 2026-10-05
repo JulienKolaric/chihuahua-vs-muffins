@@ -21,9 +21,9 @@ Hands-on labs on **one cluster / one team**. Two independent journeys (plus opti
 | Lab | File |
 |-----|------|
 | TrustyAI Step 8 pointer | [`docs/trustyai-db-install/GUIDE.md`](docs/trustyai-db-install/GUIDE.md) → predictive README |
-| **Hotline RAG backlog (after R8)** | [`README-GENAI-RAG.md`](README-GENAI-RAG.md) **[R9](README-GENAI-RAG.md#r9)** — AutoRAG · remote embeddings · Milvus · Docling · harden app · day-summary agent |
-| **Later:** AutoRAG on Hotline KB | `data/hotline-kb/eval/golden_questions.json` — see R9 #1 |
-| **Later:** Autonomous day-summary agent | Calendar / mail / tools via MCP — see R9 #6 |
+| **Hotline AutoRAG** | [`README-GENAI-RAG.md`](README-GENAI-RAG.md) **[R9](README-GENAI-RAG.md#r9)** — bake-off → notebooks → **[R9.6](README-GENAI-RAG.md#r96)** app on Pattern 1 · HIT OK · fridge soft-MISS (tiny Granite) |
+| **Hotline RAG backlog (after AutoRAG)** | [`README-GENAI-RAG.md`](README-GENAI-RAG.md) **[R10](README-GENAI-RAG.md#r10)** — remote embeddings · Milvus · Docling · harden app · day-summary agent |
+| **Later:** Autonomous day-summary agent | Calendar / mail / tools via MCP — see R10 #5 |
 
 ### How to use
 

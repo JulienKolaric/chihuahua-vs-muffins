@@ -1,4 +1,4 @@
-"""Hotline chat UI → dedicated OGX + pgvector (after R7 notebook ingest)."""
+"""Hotline chat UI → dedicated OGX + pgvector (R7 ingest or AutoRAG Pattern 1 store)."""
 
 from __future__ import annotations
 
@@ -7,14 +7,17 @@ import os
 import requests
 import streamlit as st
 
-SYSTEM = """You are Hotline 0800-HELP. Keep answers short and readable.
-Use ONLY retrieved runbooks when they match the SAME product/symptom.
-Copy cause codes exactly (LIFT-MON-1, BREW-PDF-7, WIFI-BALANCE-42). Never invent codes.
-Keep KB-specific nouns (event names, fault codes, SSIDs, firmware).
-If nothing matches, reply:
+SYSTEM = """You are Hotline 0800-HELP. Always use the file_search tool first.
+
+HIT when retrieved text matches THIS issue (elevator, Wi-Fi one-foot, coffee-prints-PDF, SSID, escalation).
+Use the matching runbook: copy codes EXACTLY (LIFT-MON-1, BREW-PDF-7, WIFI-BALANCE-42, CAMPUS-SECURE).
+Keep event names / firmware from the chunks. Short ticket. Max 100 words.
+
+MISS when the issue is not in those runbooks (fridge, opera, unicorn, or no relevant chunk).
+Do not reuse a coffee/Wi-Fi/elevator code for a fridge.
+Reply exactly:
 HELP-xxxx
-No matching runbook in the operator-uploaded KB for this issue. Escalate to Level 2. Ask for location.
-Max 100 words. No document dump."""
+No matching runbook in the operator-uploaded KB for this issue. Escalate to Level 2. Ask for location."""
 
 OGX = os.environ.get(
     "OGX_URL",
@@ -23,6 +26,9 @@ OGX = os.environ.get(
 V1 = f"{OGX}/v1"
 VECTOR_STORE_ID = os.environ.get("VECTOR_STORE_ID", "").strip()
 LLM_ID = os.environ.get("OGX_LLM_ID", "").strip()
+# AutoRAG Pattern 1 freeze: number_of_chunks = 5
+FILE_SEARCH_MAX_RESULTS = int(os.environ.get("FILE_SEARCH_MAX_RESULTS", "5"))
+PATTERN_LABEL = os.environ.get("AUTORAG_PATTERN", "").strip()
 
 
 def list_llm_id() -> str:
@@ -36,12 +42,18 @@ def list_llm_id() -> str:
 
 
 def ask_ogx(question: str, llm_id: str, vs_id: str) -> tuple[str, str]:
+    file_search: dict = {
+        "type": "file_search",
+        "vector_store_ids": [vs_id],
+        "max_num_results": FILE_SEARCH_MAX_RESULTS,
+    }
     payload = {
         "model": llm_id,
         "input": question,
         "instructions": SYSTEM,
         "temperature": 0.1,
-        "tools": [{"type": "file_search", "vector_store_ids": [vs_id]}],
+        "tool_choice": "required",
+        "tools": [file_search],
     }
     r = requests.post(f"{V1}/responses", json=payload, timeout=180)
     r.raise_for_status()
@@ -55,25 +67,41 @@ def ask_ogx(question: str, llm_id: str, vs_id: str) -> tuple[str, str]:
             for c in item.get("content") or []:
                 if c.get("type") == "output_text":
                     answer = (c.get("text") or "").strip()
-    meta = f"OGX file_search · retrieved={n_hits} · vs={vs_id[:18]}…"
+    tag = f" · {PATTERN_LABEL}" if PATTERN_LABEL else ""
+    meta = (
+        f"OGX file_search · top_k={FILE_SEARCH_MAX_RESULTS} · "
+        f"retrieved={n_hits} · vs={vs_id[:18]}…{tag}"
+    )
     return answer or "(empty response)", meta
 
 
 st.set_page_config(page_title="Hotline RAG", page_icon="🔎", layout="centered")
 st.title("Hotline 0800-HELP — RAG")
-st.caption(
-    "End-user chat → your OGX server searches pgvector (runbooks ingested in the R7 notebook)."
-)
+if PATTERN_LABEL:
+    st.caption(
+        f"End-user chat → OGX + pgvector · AutoRAG **{PATTERN_LABEL}** vector store "
+        f"(chunk recursive 512/32 · top_k={FILE_SEARCH_MAX_RESULTS})."
+    )
+else:
+    st.caption(
+        "End-user chat → your OGX server searches pgvector "
+        "(R7 notebook ingest, or set AUTORAG_PATTERN after pointing VECTOR_STORE_ID at a Pattern store)."
+    )
 
 st.sidebar.markdown("**Backend**")
 st.sidebar.code(OGX, language=None)
 st.sidebar.markdown("**Vector store**")
 st.sidebar.code(VECTOR_STORE_ID or "(set VECTOR_STORE_ID)", language=None)
+st.sidebar.markdown("**Retrieval**")
+st.sidebar.code(f"top_k={FILE_SEARCH_MAX_RESULTS}", language=None)
+if PATTERN_LABEL:
+    st.sidebar.markdown("**AutoRAG**")
+    st.sidebar.code(PATTERN_LABEL, language=None)
 
 if not VECTOR_STORE_ID:
     st.error(
-        "Missing env `VECTOR_STORE_ID`. Run the R7 notebook first, copy `vs_…`, "
-        "then set it on this Deployment and rollout."
+        "Missing env `VECTOR_STORE_ID`. Use the AutoRAG Pattern 1 store "
+        "`vs_75001176-…` (R9) or an R7 `vs_…`, then set it on this Deployment."
     )
     st.stop()
 

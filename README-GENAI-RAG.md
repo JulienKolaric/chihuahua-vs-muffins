@@ -27,7 +27,42 @@ Playground / Gen AI studio RAG is **Technology Preview**.
 | R6 | [Streamlit Hotline KB app](#r6) | ✅ `hotline-kb-chat` + ConfigMap |
 | R7 | [Install dedicated OGX + pgvector](#r7) | ✅ install + notebook validate |
 | R8 | [Streamlit app on OGX + pgvector](#r8) | ✅ `hotline-rag-chat` |
-| R9 | [Backlog — next sessions](#r9) | park so we do not forget |
+| R9 | [AutoRAG on Hotline KB](#r9) | ✅ Pattern 1 · [R9.6](#r96) app · HIT OK · fridge soft-MISS |
+| R10 | [Backlog — after AutoRAG](#r10) | park |
+
+### Pods you should see (by step)
+
+Use **Workloads → Pods** in project **`genai-hotline`**. Names include a random suffix; match the **prefix**.
+
+| Step | When | Pods / workloads that appear |
+|------|------|------------------------------|
+| **G2** ([README-GENAI](README-GENAI.md#g2)) | Deploy Granite | `redhataigranite-40-h-tiny-fp8-predictor-…` (often **3/3** Ready) |
+| **G3** | Deploy Open WebUI | `open-webui-…` (may be scaled to 0 later) |
+| **G4** | S2I Streamlit no-KB | Build: `hotline-chat-*-build` (**Completed**) · Run: `hotline-chat-…` |
+| **G5** | Create Playground | `lsd-genai-playground-…` · **`genai-pgvector-…`** (auto with Playground) |
+| **R6** | ConfigMap + S2I KB app | Build: `hotline-kb-chat-*-build` · Run: `hotline-kb-chat-…` |
+| **R7 §1** | `01-postgres-pgvector.yaml` | **`hotline-rag-pgvector-…`** |
+| **R7 §2** | `03-ogxserver.yaml` (+ config) | **`hotline-rag-ogx-…`** |
+| **R7 §3** | Workbench for notebook | StatefulSet pod e.g. **`hotline-rag-0`** if you named the workbench `hotline-rag` (your choice of name) |
+| **R8** | S2I RAG chat app | Build: `hotline-rag-chat-*-build` · Run: **`hotline-rag-chat-…`** |
+| **R9.0** | `autorag: true` on dashboard | (no new project pod — UI nav **Gen AI studio → AutoRAG**) |
+| **R9.1** | Pipeline server in `genai-hotline` | `ds-pipeline-…` · DB pod (e.g. `mariadb-…` / cluster default) |
+| **R9.4** | AutoRAG optimization run | Pipeline run pods (AutoRAG runtime image) while status **Running** |
+
+**Two stacks at once (expected after R7+):**
+
+| Playground (G5) | Yours (R7+) |
+|-----------------|-------------|
+| `lsd-genai-playground-…` | `hotline-rag-ogx-…` |
+| `genai-pgvector-…` | `hotline-rag-pgvector-…` |
+
+Shared: `redhataigranite-…-predictor-…`. Builds (`*-build` Completed) are leftover job pods — safe to ignore or delete.
+
+Quick check:
+
+```bash
+oc -n genai-hotline get pods
+```
 
 ---
 
@@ -370,6 +405,7 @@ Show the Playground lesson on a real Route. Separating text (ConfigMap) from cod
 - Sidebar shows `KB_DIR=/etc/hotline-kb` and the 5 files
 - Elevator question → HIT · fridge → MISS
 - Changing a file in the ConfigMap does **not** require `start-build`
+- **Pods:** `hotline-kb-chat-…` Running · during build `hotline-kb-chat-*-build` Completed
 
 ### How
 
@@ -523,10 +559,11 @@ Playground storage is for experiments and disappears with the playground. A hotl
 **How we install it here:** we deploy our own PostgreSQL in the project (`hotline-rag-pgvector`), run `CREATE EXTENSION vector` on first start (init script), then point a dedicated `OGXServer` at it with `ENABLE_PGVECTOR=true`. We do **not** reuse Playground’s `genai-pgvector`.
 
 ### Success looks like
-- `hotline-rag-pgvector` Deployment **1/1 Ready**
-- `OGXServer/hotline-rag-ogx` **Ready**; Service `hotline-rag-ogx-service:8321`
+- `hotline-rag-pgvector` Deployment **1/1 Ready** → pod **`hotline-rag-pgvector-…`**
+- `OGXServer/hotline-rag-ogx` **Ready** → pod **`hotline-rag-ogx-…`** · Service `hotline-rag-ogx-service:8321`
 - Notebook indexes Hotline files into **your** vector store and answers elevator / fridge
-- Playground resources remain untouched (`genai-pgvector`, `lsd-genai-playground`)
+- Playground resources remain untouched (`genai-pgvector-…`, `lsd-genai-playground-…`)
+- Workbench you create for the notebook → pod named like **`{workbench-name}-0`** (e.g. `hotline-rag-0`)
 
 ### How
 
@@ -675,6 +712,7 @@ The notebook is for builders. End users open a Route. R6 (`hotline-kb-chat`) sea
 - Sidebar shows `OGX_URL` + `VECTOR_STORE_ID`
 - Elevator → grounded HIT · fridge → MISS
 - No GPU on this Deployment
+- **Pods:** `hotline-rag-chat-…` Running · during build `hotline-rag-chat-*-build` Completed
 
 ### How
 
@@ -768,34 +806,492 @@ oc -n genai-hotline start-build hotline-rag-chat --from-dir=apps/hotline_rag_cha
 
 <a id="r9"></a>
 
-# R9 — Backlog (next sessions — do not forget)
+# R9 — AutoRAG on Hotline KB
 
 ### What we want
-Park follow-ups now that the Hotline RAG path is proven end-to-end (Playground → ConfigMap app → dedicated OGX/pgvector → Streamlit).
+Run an **automatic comparison of RAG methodologies** (chunking / retrieval / etc.) on the Hotline KB, scored against golden questions, and pick a **winning pattern** from a leaderboard.
 
 ### Why
-Avoid losing the “what’s next” ideas after the room ships R8.
+R7/R8 proved *one* hand-built path that works. AutoRAG answers: *“Among several RAG recipes, which methodology scores best on our Hotline docs?”* — Technology Preview; dashboard wizard + pipeline run.
+
+### Plain language — what AutoRAG is doing
+
+| | R7 / R8 (previous lab) | R9 AutoRAG |
+|--|------------------------|------------|
+| Goal | Ship a working Hotline RAG | **Analyse** which RAG *methodology* is best for this KB |
+| Who chooses chunk size, top-k, … | **We did** (OGX defaults + one notebook ingest) | **The pipeline** tries many combinations (**patterns**) |
+| How you know it is good | Manual HIT elevator / MISS fridge | Golden Q&A + scores on a **leaderboard** |
+| Output | App `hotline-rag-chat` on a Route | Ranked patterns + **recipe notebooks** (not the app itself) |
+
+A **pattern** = one full RAG recipe (how documents are chunked, embedded, retrieved, then answered). AutoRAG is **not** a second chat UI — it is a **bake-off** between recipes on the same corpus.
+
+### The path (do not skip the story)
+
+AutoRAG does **not** update Streamlit by itself. Lab path:
+
+```text
+1. AutoRAG pipeline     → leaderboard, winner (Pattern 1), indexed store in pgvector
+2. Try this pattern     → quick chat in the dashboard (HIT / MISS)
+3. Inference notebook   → same recipe in Jupyter (validate without the app)
+   Indexing notebook    → optional “how to re-index”; skip if the run already filled the store
+4. hotline-rag-chat     → point VECTOR_STORE_ID at Pattern 1 store + rebuild (R9.6)
+```
+
+| Artifact | What it is | What it is **not** |
+|----------|------------|---------------------|
+| AutoRAG run | Bake-off + fills a **vector store** | The Hotline Route |
+| Indexing notebook | Fiche cuisine to **re-ingest** docs with Pattern 1 chunking | Required if the run already indexed |
+| Inference notebook | Fiche cuisine to **ask** the Pattern 1 store from Jupyter | The production UI |
+| `hotline-rag-chat` | The **restaurant** (callers) | Updated until you set env + rebuild |
+
+**Frozen on this lab:** run **`hotline-kb-autorag-1 - 2`** → **Succeeded** · **8** patterns · winner **Pattern 1** (overall ≈ **0.702**) · LLM Granite + embedding `granite-embedding-125m-english` · then notebooks validate → [R9.6](#r96) app on that store.
+
+![AutoRAG succeeded — 8 patterns · Pattern 1 wins](docs/screenshots/step-genai-rag-autorag-succeeded.png)
 
 ### Success looks like
-- Facilitator and future-you know the ordered backlog below
-- Links point at the right corpus / docs
+- Left nav: **Gen AI studio → AutoRAG**
+- Pipeline server in **`genai-hotline`** **Ready** with AutoML/AutoRAG pipelines
+- Optimization run reaches **Succeeded** / **Complete** with a leaderboard
+- A clear **winning pattern** (lab freeze: Pattern 1)
+- Optional: Sample Q&A / **Try this pattern** on the best row
+
+**Docs of record:** [Working with AutoRAG (3.5)](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/working_with_autorag/index)
 
 ### How
 
-**Done in this lab (freeze):** R0–R8 — Playground Knowledge · grounded prompts · `hotline-kb-chat` (ConfigMap) · dedicated `hotline-rag-pgvector` + `hotline-rag-ogx` · notebook validate · `hotline-rag-chat` on Route.
+**Prerequisites (lab status after this sitting):**
 
-**Next sessions (pick one per sitting):**
+| Prerequisite | Lab status |
+|--------------|------------|
+| `genAiStudio: true` | ✅ (G1) |
+| `dashboardConfig.autorag: true` | ✅ (R9.0) |
+| Pipeline server in **`genai-hotline`** + AutoML/AutoRAG pipelines | ✅ (R9.1) |
+| Open GenAI Stack secret (`OGX_CLIENT_BASE_URL` + non-empty `OGX_CLIENT_API_KEY`) | ✅ `hotline-rag-ogx-stack` (API key must be e.g. `none`, **not** empty) |
+| S3 connection for docs / artifacts | ✅ e.g. `minio-hotline-kb` → put corpus in **one folder** |
+| Dedicated OGX + remote pgvector | ✅ `hotline-rag-ogx` + `hotline-rag-pgvector` |
+| Foundation + **working** embedding | ✅ Granite vLLM + **`granite-embedding-125m-english`** only (exclude **nomic** — not cached / HF offline) |
+| vLLM tool calling | ✅ `--enable-auto-tool-choice` · `--tool-call-parser=granite4` |
+| Eval JSON | [`data/hotline-kb/eval/golden_questions.json`](data/hotline-kb/eval/golden_questions.json) |
+
+Limits (TP): max **3** foundation + **2** embedding models per run; remote vector DB only (we use pgvector). Prefer **Faster** preset (4 vCPU / 16 Gi) on a sandbox.
+
+---
+
+<a id="r90"></a>
+
+## R9.0 — Admin: enable AutoRAG in the dashboard
+
+### What we want
+Show **Gen AI studio → AutoRAG** for every user of this cluster.
+
+### Why
+Official prerequisite: both `genAiStudio` and `autorag` must be `true` on `OdhDashboardConfig`.
+
+### Success looks like
+- `autorag=true` in the jsonpath check below
+- After hard-refresh: left nav **AutoRAG**
+
+### How
+
+Pick **A (CLI)** or **B (OpenShift Console YAML)** — same CR.
+
+#### Check (either path)
+
+```bash
+oc -n redhat-ods-applications get odhdashboardconfig odh-dashboard-config \
+  -o jsonpath='genAiStudio={.spec.dashboardConfig.genAiStudio} autorag={.spec.dashboardConfig.autorag}{"\n"}'
+```
+
+**Expected output:**
+
+```text
+genAiStudio=true autorag=true
+```
+
+#### A — CLI patch
+
+If `autorag` is empty or `false`:
+
+```bash
+oc -n redhat-ods-applications patch odhdashboardconfig odh-dashboard-config --type=merge \
+  -p '{"spec":{"dashboardConfig":{"autorag":true}}}'
+```
+
+#### B — Manual (OpenShift Console)
+
+Official path: [Edit the dashboard configuration](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/managing_resources/customizing-the-dashboard) (cluster-admin / OpenShift AI admin).
+
+1. Log in to the **OpenShift console** (not only the OpenShift AI dashboard) as a user with admin privileges
+2. Perspective **Administrator** → **Home** → **API Explorer**
+3. Search bar → type **`OdhDashboardConfig`** → open that kind
+4. **Project** list → **`redhat-ods-applications`**
+5. Tab **Instances** → click **`odh-dashboard-config`**
+6. Tab **YAML**
+7. Under `spec.dashboardConfig`, set (add the key if missing):
+
+```yaml
+spec:
+  dashboardConfig:
+    genAiStudio: true
+    autorag: true
+```
+
+![OdhDashboardConfig YAML — genAiStudio + autorag](docs/screenshots/step-genai-rag-autorag-dashboard-config.png)
+
+8. **Save** → **Reload** (so the console syncs the CR)
+
+**Note:** For `autorag` / `genAiStudio` / `automl`, **`true` = feature shown**. (Some other dashboard keys use inverted `disable*` flags — do not invert `autorag`.)
+
+#### After A or B
+
+Hard-refresh the **OpenShift AI** UI → left nav **Gen AI studio → AutoRAG**.
+
+**Pods:** none new in `genai-hotline` — only dashboard config.
+---
+
+<a id="r91"></a>
+
+## R9.1 — Pipeline server in `genai-hotline`
+
+### What we want
+A **Ready** pipeline server in the Gen AI project with managed AutoML/AutoRAG pipelines installed.
+
+### Why
+AutoRAG optimization runs are pipeline runs. No server → Create run never schedules.
+
+### Success looks like
+- Project **Pipelines** shows server **Ready**
+- Pods: `ds-pipeline-…` (+ DB) **Running** in `genai-hotline`
+
+### How
+
+**UI:** OpenShift AI → project **`genai-hotline`** → **Pipelines** → **Configure pipeline server**
+
+Reuse lab MinIO (same pattern as predictive §9.1):
+
+| Field | Value |
+|-------|--------|
+| Access key | `minio` |
+| Secret key | `minio123` |
+| Endpoint | `http://minio.lab-minio.svc.cluster.local:9000` |
+| Region | `us-east-1` |
+| Bucket | `muffin-chihuahua` (or a dedicated `hotline-kb` bucket if you create one) |
+| Database | **Default database on the cluster** |
+
+**Advanced settings:** check **Enable AutoML and AutoRAG pipelines** → **Configure** → wait **Ready**.
+
+```bash
+oc -n genai-hotline get pods | grep -iE 'pipeline|maria|mysql|postgres'
+```
+
+**Expected output (shape):**
+
+```text
+ds-pipeline-…          1/1     Running
+mariadb-…              1/1     Running
+```
+
+(Names differ by cluster; status must be Running / Ready.)
+
+If you create the DSPA with YAML instead of UI: set `spec.apiServer.managedPipelines: {}` ([AutoRAG prereqs](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/working_with_autorag/index)).
+
+---
+
+<a id="r92"></a>
+
+## R9.2 — Connections: OGX (+ optional S3 for docs)
+
+### What we want
+An **OGX connection** in `genai-hotline` that AutoRAG can select in the wizard. Optionally an S3 connection pointing at the Hotline files.
+
+### Why
+Wizard step 1 requires an OGX connection (base URL + API key). Docs can be uploaded in the UI or browsed from S3.
+
+### Success looks like
+- Connections tab lists e.g. **`hotline-rag-ogx`** (OGX) and optionally **`minio-hotline-kb`** (S3)
+- Curl to the Service URL returns models (no auth on this lab OGX)
+
+### How
+
+#### A — OGX connection (required)
+
+On this cluster the connection type is **URI - v1** (no separate “OGX” type in the picker).
+
+1. Project **`genai-hotline`** → **Connections** → **Add connection** / **Create connection**
+2. **Connection type:** **URI - v1**
+3. Values for this lab:
+
+| Field | Value |
+|-------|--------|
+| Connection name | `hotline-rag-ogx` |
+| URI | `http://hotline-rag-ogx-service.genai-hotline.svc.cluster.local:8321` |
+
+![Create connection — URI to hotline-rag-ogx](docs/screenshots/step-genai-rag-autorag-ogx-connection.png)
+
+4. **Create**
+
+No API-key field on URI - v1 — lab OGX has no OAuth; that is OK.
+
+Verify from a shell (read-only):
+
+```bash
+oc -n genai-hotline exec deploy/hotline-rag-ogx -- \
+  curl -sS http://127.0.0.1:8321/v1/models | head -c 400
+```
+
+**Expected output:** JSON listing at least one `model_type":"llm"` and one embedding model.
+
+#### B — Docs in the wizard (simplest for lab)
+
+Keep files local and **upload** in R9.4:
+
+- Corpus: [`data/hotline-kb/upload/`](data/hotline-kb/upload/) (`01_…txt` … `05_faq.csv`)
+- Eval: [`data/hotline-kb/eval/golden_questions.json`](data/hotline-kb/eval/golden_questions.json)
+
+`correct_answer_document_ids` must be **base file names only** (no folder path) — already aligned to `upload/`.
+
+#### C — Optional S3 for docs
+
+Same MinIO as pipelines; put all Hotline files in **one folder** in the bucket, then create an S3 connection and select that folder in the wizard.
+
+---
+
+<a id="r93"></a>
+
+## R9.3 — Sanity-check eval JSON
+
+### What we want
+Confirm the golden set is valid JSON and document IDs match upload file names.
+
+### Why
+Wrong IDs → weak sampling / bad context-correctness scores.
+
+### Success looks like
+- `python -m json.tool` succeeds
+- Every `correct_answer_document_ids` entry exists under `data/hotline-kb/upload/`
+
+### How
+
+```bash
+python3 -m json.tool data/hotline-kb/eval/golden_questions.json > /dev/null && echo OK
+ls data/hotline-kb/upload/
+```
+
+**Expected output:**
+
+```text
+OK
+01_wifi_one_foot.txt
+02_coffee_pdf.txt
+03_elevator_monday.txt
+04_escalation_matrix.txt
+05_faq.csv
+```
+
+---
+
+<a id="r94"></a>
+
+## R9.4 — Create AutoRAG optimization run
+
+### What we want
+Start one optimization run that tests several RAG patterns on the Hotline corpus.
+
+### Why
+This is the product step: AutoRAG explores the search space and ranks patterns.
+
+### Success looks like
+- Run listed on **AutoRAG** page as **Pending** / **Running**, then **Complete**
+- Pipeline run pods appear while Running
+
+### How
+
+1. OpenShift AI → **Gen AI studio** → **AutoRAG**
+2. Project → **`genai-hotline`** → **Create AutoRAG optimization run**
+3. Name e.g. `hotline-kb-autorag-1` · **Open GenAI Stack connection** = **`hotline-rag-ogx-stack`** (not a plain URI connection) → **Next**
+4. **Knowledge setup:**
+   - Prefer S3: put all Hotline files in **one folder** (e.g. `hotline-kb/`) → **Browse bucket** → select that **folder** (wizard stores one S3 key; a folder = multi-doc)
+   - **Vector I/O provider:** the **pgvector** provider from `hotline-rag-ogx` (not Playground’s)
+   - Evaluation dataset: upload / select `golden_questions.json`
+5. Lab-friendly settings:
+
+| Setting | Lab value |
+|---------|-----------|
+| Optimization metric | **Answer correctness** (or Overall if the UI offers it) |
+| Maximum RAG patterns | `8` (lab freeze) — use `4` if the sandbox is tight |
+| Run preset | **Faster** (4 vCPU / 16 Gi) |
+| Foundation models | **only** Granite (≤ 3) |
+| Embedding models | **only** `sentence-transformers/ibm-granite/granite-embedding-125m-english` — **uncheck nomic** (registered but does not respond offline) |
+
+6. **Create run** → monitor on the AutoRAG page.
+
+```bash
+oc -n genai-hotline get pods | grep -iE 'autorag|pipeline-run|workflow'
+```
+
+**Expected output while Running:** one or more short-lived pipeline / workflow pods; after Complete they finish.
+
+Runs **cannot** be edited after creation — stop/archive/delete via pipeline run management if needed.
+
+---
+
+<a id="r95"></a>
+
+## R9.5 — Evaluate results
+
+### What we want
+Read the leaderboard as an **analysis of RAG methodologies**: which pattern won, and whether Sample Q&A still looks like Hotline.
+
+### Why
+The pipeline already ranked recipes by score. You still sanity-check elevator / coffee / Wi-Fi answers before adopting a pattern in an app.
+
+### Success looks like
+- Run **Succeeded** with N patterns evaluated (lab: **8**)
+- Clear winner (lab: **Pattern 1**, overall ≈ **0.702**)
+- Leaderboard shows LLM + embedding used (lab: Granite + granite-embedding)
+- Optional: Sample Q&A / **Try this pattern** / **View code** / save notebooks
+
+### How
+
+1. **Gen AI studio** → **AutoRAG** → open the **Succeeded** run (lab: `hotline-kb-autorag-1 - 2`)
+2. Read the graph: load → discover → extract → prepare search space → optimize → **Pattern 1…N** in parallel → select best
+3. Leaderboard: compare overall / correctness / faithfulness / context ([metrics chapter](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/working_with_autorag/index))
+4. Winner → **View details** → **Sample Q&A**
+5. Optional: **Try this pattern** (dashboard chat)
+6. **Save as inference notebook** (and indexing if you will re-ingest later) — copies live under [`notebooks/autorag/`](notebooks/autorag/)
+7. Workbench: run **inference** (API key `none` if prompted). Indexing is optional — AutoRAG already indexed; Docling on a 4 Gi workbench may crash.
+
+**What the notebooks are for (plain language):** AutoRAG cooked once in a pipeline. The notebooks are the **recipe card** so you can redo ingest or Q&A in Jupyter. They do **not** change the Route. The Route changes only in [R9.6](#r96).
+
+![AutoRAG succeeded — methodology bake-off](docs/screenshots/step-genai-rag-autorag-succeeded.png)
+
+**Frozen:** AutoRAG **Succeeded** · 8 patterns · **Pattern 1** best · same models as R8 stack (Granite + granite-embedding) — the *methodology* (chunk/retrieve knobs) is what was compared, not a new LLM.
+
+**Teaching point:** R7/R8 = one hand-built methodology that works for demos. R9 = **systematic analysis** of several methodologies on the same Hotline KB; next you may align the production app with the winning pattern (notebooks / Responses API snippets).
+
+---
+
+<a id="r96"></a>
+
+## R9.6 — Apply Pattern 1 to `hotline-rag-chat` (for real)
+
+### What we want
+Point the **end-user Hotline app** at the AutoRAG **Pattern 1** vector store (not the old R7 `hotline-kb-pgvector` store), with Pattern 1 retrieval knobs (`top_k=5`).
+
+### Why
+Until this step, AutoRAG only *analysed* and *tested* the recipe. The Route `hotline-rag-chat` still used the R7 ingest store. This step is the production-lab handoff.
+
+### Success looks like
+- Deploy env: `VECTOR_STORE_ID=vs_75001176-23a4-4657-9f38-a8d023715426`
+- Sidebar shows AutoRAG **Pattern 1** + `top_k=5` · captions `retrieved>0` on in-KB questions
+- Route HIT: elevator · coffee · Wi-Fi · SSID
+- Fridge: ideal MISS; lab honesty — tiny Granite may soft false-HIT (closest fallback code)
+
+### How
+
+**What “apply” means here**
+
+| Piece | Pattern 1 value (lab freeze) | How the app gets it |
+|-------|------------------------------|---------------------|
+| Vector store (indexed KB) | `vs_75001176-23a4-4657-9f38-a8d023715426` | env `VECTOR_STORE_ID` |
+| Chunking | recursive · size **512** · overlap **32** | already baked into that store by AutoRAG |
+| Retrieval top-k | **5** | env `FILE_SEARCH_MAX_RESULTS=5` + app `file_search.max_num_results` |
+| Embed / LLM | granite-embedding + Granite tiny | same OGX as R8 |
+| Hotline persona | HIT/MISS rules | still `SYSTEM` in `app.py` (lab persona — keep it) |
+
+#### 1) Confirm Pattern 1 store exists
+
+```bash
+NS=genai-hotline
+oc -n "$NS" exec deploy/hotline-rag-ogx -- \
+  curl -sS http://127.0.0.1:8321/v1/vector_stores | python3 -c \
+  'import json,sys; d=json.load(sys.stdin);
+[print(x["id"], x.get("name","")) for x in (d.get("data") or [])]'
+```
+
+**Expected:** a line with `vs_75001176-23a4-4657-9f38-a8d023715426`.
+
+#### 2) Rebuild app (Pattern 1 caption + top_k) then point env
+
+```bash
+NS=genai-hotline
+PATTERN_VS=vs_75001176-23a4-4657-9f38-a8d023715426
+
+oc -n "$NS" start-build hotline-rag-chat --from-dir=apps/hotline_rag_chat --follow
+
+oc -n "$NS" set env deploy/hotline-rag-chat \
+  VECTOR_STORE_ID="$PATTERN_VS" \
+  FILE_SEARCH_MAX_RESULTS=5 \
+  AUTORAG_PATTERN='Pattern 1'
+
+oc -n "$NS" rollout status deploy/hotline-rag-chat --timeout=300s
+oc -n "$NS" get route hotline-rag-chat -o jsonpath='https://{.spec.host}{"\n"}'
+```
+
+**Expected output:**
+
+```text
+deployment "hotline-rag-chat" successfully rolled out
+https://hotline-rag-chat-genai-hotline.apps....
+```
+
+#### 3) Test on the Route
+
+```bash
+oc -n genai-hotline get route hotline-rag-chat -o jsonpath='https://{.spec.host}{"\n"}'
+```
+
+Open that URL. Sidebar: **AutoRAG Pattern 1**, `top_k=5`, vector store starting `vs_75001176-…`.
+
+Ask:
+
+| Question | Expect | Lab freeze (Pattern 1 app) |
+|----------|--------|----------------------------|
+| `The elevator refuses Mondays. What recurring calendar event must be deleted?` | HIT — *Maintenance spirits — Mondays* / `LIFT-MON-1` | ✅ HIT · `retrieved>0` |
+| `The coffee machine prints PDF instead of coffee. Which firmware should be reinstalled?` | HIT — `espresso-os-3.2` / `BREW-PDF-7` | ✅ HIT |
+| `My Wi-Fi only works when I stand on one foot…` | HIT — `WIFI-BALANCE-42` + 3 steps | ✅ HIT |
+| `What SSID should B-Wing use for corporate Wi-Fi?` | HIT — `CAMPUS-SECURE` | ✅ HIT |
+| `My fridge is making a weird humming noise. What is the official Hotline cause code?` | MISS — no `LIFT-*` / `BREW-*` / `WIFI-*` | ⚠️ often soft false-HIT (see below) |
+
+**Known limit (document this for the room):** tiny Granite + `file_search` always returns *nearest* chunks (`retrieved=4` even for fridge). The model may admit “not in the runbooks” then invent a **closest fallback** (e.g. `LIFT-MON-1` for a fridge). That is **not** an AutoRAG failure — AutoRAG improved indexing/retrieval; **out-of-KB refusal** is prompt + small LLM. Demo tip: show HIT questions 1–4; treat fridge as “known soft fail” or reinforce MISS in `SYSTEM` and rebuild.
+
+App knobs: `tool_choice=required` so search actually runs; `SYSTEM` in [`apps/hotline_rag_chat/app.py`](apps/hotline_rag_chat/app.py) carries HIT/MISS rules. Rebuild after prompt edits:
+
+```bash
+oc -n genai-hotline start-build hotline-rag-chat --from-dir=apps/hotline_rag_chat --follow
+oc -n genai-hotline rollout status deploy/hotline-rag-chat --timeout=300s
+```
+
+**Pods:** rollout → new `hotline-rag-chat-…` Running (no new OGX/pgvector pods).
+
+**Frozen:** Route on Pattern 1 store · HIT elevator/coffee/Wi-Fi/SSID validated · fridge MISS imperfect on tiny Granite · path AutoRAG → notebooks → app documented above.
+
+---
+
+<a id="r10"></a>
+
+# R10 — Backlog (after AutoRAG)
+
+### What we want
+Park follow-ups that are **not** the AutoRAG sitting.
+
+### Why
+Keep the room focused; do not lose later ideas.
+
+### Success looks like
+- Ordered list below is enough for the next session pick
+
+### How
 
 | # | Topic | Why / starting point |
 |---|--------|----------------------|
-| 1 | **AutoRAG** on Hotline KB | Tune chunking / embedding / retrieval with [`data/hotline-kb/eval/golden_questions.json`](data/hotline-kb/eval/golden_questions.json) — [AutoRAG docs](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/working_with_autorag/index) |
-| 2 | **Remote embedding model** | Official production-style path (separate embedding endpoint) when a 2nd GPU or remote embedder is available — today we use inline sentence-transformers on the OGX pod |
-| 3 | **Milvus** (instead of / beside pgvector) | Large-scale vector store + etcd — [vector database chapter](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/working_with_ogx/select-and-deploy-a-vector-database_rag); same notebook/app pattern with `provider_id: milvus-remote` |
-| 4 | **Docling ingest pipeline** | PDFs / messy docs → Markdown → same OGX vector store — [Building RAG with OGX](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/building_rag_applications_with_ogx/index) Docling section |
-| 5 | **Harden `hotline-rag-chat`** | Auth on the Route · ConfigMap/Secret for `VECTOR_STORE_ID` · optional Open WebUI on the same OGX |
-| 6 | **Day-summary agent + MCP** | Separate Gen AI story: agent that summarizes the user’s day (calendar / mail / tools) — hub “Later” item |
+| 1 | **Remote embedding model** | Official production-style path when a 2nd GPU / remote embedder is available — today: inline sentence-transformers on the OGX pod |
+| 2 | **Milvus** (instead of / beside pgvector) | Large-scale vector store — [vector database chapter](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/working_with_ogx/select-and-deploy-a-vector-database_rag) |
+| 3 | **Docling ingest pipeline** | PDFs / messy docs → Markdown → same OGX store |
+| 4 | **Harden `hotline-rag-chat`** | Auth on Route · ConfigMap/Secret for `VECTOR_STORE_ID` |
+| 5 | **Day-summary agent + MCP** | Separate Gen AI story — hub “Later” item |
 
-Hub pointer: keep this backlog mirrored under **Optional / related** in [`README.md`](README.md).
+Hub pointer: [`README.md`](README.md) Optional / related.
 
 ---
 

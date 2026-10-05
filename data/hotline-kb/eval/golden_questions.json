@@ -4,34 +4,34 @@
     "correct_answers": [
       "Cause code WIFI-BALANCE-42. Disable BalanceAware Roaming for AP group B-WING, reconnect to CAMPUS-SECURE on one foot, schedule wifi-fw-9.9.9-flatfoot."
     ],
-    "correct_answer_document_ids": ["01_wifi_one_foot.txt", "wifi-one-foot"]
+    "correct_answer_document_ids": ["01_wifi_one_foot.txt"]
   },
   {
     "question": "The coffee machine prints PDF instead of coffee. Which firmware should be reinstalled?",
     "correct_answers": [
       "Reinstall brew firmware espresso-os-3.2 after removing office-print-bundle-2024. Cause code BREW-PDF-7."
     ],
-    "correct_answer_document_ids": ["02_coffee_pdf.txt", "coffee-pdf"]
+    "correct_answer_document_ids": ["02_coffee_pdf.txt"]
   },
   {
     "question": "The elevator refuses Mondays. What recurring calendar event must be deleted?",
     "correct_answers": [
       "Delete recurring event Maintenance spirits — Mondays. Fault code NO-MON. Cause code LIFT-MON-1."
     ],
-    "correct_answer_document_ids": ["03_elevator_monday.txt", "elevator-monday"]
+    "correct_answer_document_ids": ["03_elevator_monday.txt"]
   },
   {
     "question": "Which team owns cause code BREW-PDF-7?",
     "correct_answers": [
       "Facilities / CoffeeOps via channel #coffeeops"
     ],
-    "correct_answer_document_ids": ["04_escalation_matrix.txt", "escalation"]
+    "correct_answer_document_ids": ["04_escalation_matrix.txt"]
   },
   {
     "question": "What SSID should B-Wing use for corporate Wi-Fi?",
     "correct_answers": [
       "CAMPUS-SECURE"
     ],
-    "correct_answer_document_ids": ["05_faq.csv", "faq-ssid"]
+    "correct_answer_document_ids": ["05_faq.csv"]
   }
 ]

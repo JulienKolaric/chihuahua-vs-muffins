@@ -230,6 +230,7 @@ Playground needs a Ready generative endpoint (usually **vLLM**), separate from a
 ### Success looks like
 - Deployment **Ready** in **`genai-hotline`**
 - **Add to playground** available on the asset
+- **Pod:** `redhataigranite-40-h-tiny-fp8-predictor-…` (often **3/3** Ready — runtime + proxy sidecars)
 
 ### How
 
@@ -334,6 +335,7 @@ First external UI: full OSS chat (models, system prompt, history) consuming RHOA
 - Route opens Open WebUI
 - Model `redhataigranite-40-h-tiny-fp8` answers with ticket + 3 steps + closing line
 - This Deployment uses **no GPU** (GPU stays on the predictor)
+- **Pod:** `open-webui-…` Running
 
 ### How
 
@@ -387,6 +389,7 @@ Second external UI: *your* code + OpenShift build (`requirements.txt` + `.s2i/bi
 - `hotline-chat` Route serves Streamlit
 - Same Hotline ticket shape (persona hard-coded in `apps/hotline_chat/app.py`)
 - No GPU on this Deployment
+- **Pods:** `hotline-chat-…` Running · during build `hotline-chat-*-build` Completed
 
 ### How
 
@@ -478,6 +481,7 @@ Punchline after G3/G4: customers can also use the **integrated** product UI. Sam
 ### Success looks like
 - Playground chat with ticket-style Hotline reply
 - Screenshot frozen for the room
+- **Pods created with Playground:** `lsd-genai-playground-…` · **`genai-pgvector-…`** (auto — not a manual install)
 
 ### How
 
