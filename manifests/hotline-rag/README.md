@@ -2,7 +2,7 @@
 
 **Not** the Gen AI Playground. This folder installs an app-team stack: your database + your OGX server, then you ingest Hotline runbooks from a notebook.
 
-Lab guide (What / Why / Success / How): **[`README-GENAI-RAG.md` §R7](../../README-GENAI-RAG.md#r7)**
+Lab guide (What / Why / Success / How): **[`README-GENAI.md` §R7](../../README-GENAI.md#r7)**
 
 ## What pgvector does
 

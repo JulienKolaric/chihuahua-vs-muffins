@@ -5,8 +5,7 @@ Hands-on labs on **one cluster / one team**. Two independent journeys (plus opti
 | Lab | File | What you practice |
 |-----|------|-------------------|
 | **Predictive** — Chihuahua vs Muffin | [`README-PREDICTIVE.md`](README-PREDICTIVE.md) | S3 → train → **OVMS** → guardrails → **TrustyAI** → pipelines → **AutoML** |
-| **Gen AI** — Playground / OGX | [`README-GENAI.md`](README-GENAI.md) | **`genai-hotline`** · vLLM Hotline · **Open WebUI → Streamlit/S2I → Playground** |
-| **Gen AI — Hotline KB RAG** | [`README-GENAI-RAG.md`](README-GENAI-RAG.md) | Playground → ConfigMap app → **dedicated OGX+pgvector** → **`hotline-rag-chat`** |
+| **Gen AI** — Hotline (Playground → RAG → AutoRAG) | [`README-GENAI.md`](README-GENAI.md) | **`genai-hotline`** · vLLM · Open WebUI → Streamlit → Playground → **KB RAG** → AutoRAG |
 
 | | Predictive | Gen AI |
 |--|------------|--------|
@@ -21,8 +20,8 @@ Hands-on labs on **one cluster / one team**. Two independent journeys (plus opti
 | Lab | File |
 |-----|------|
 | TrustyAI Step 8 pointer | [`docs/trustyai-db-install/GUIDE.md`](docs/trustyai-db-install/GUIDE.md) → predictive README |
-| **Hotline AutoRAG** | [`README-GENAI-RAG.md`](README-GENAI-RAG.md) **[R9](README-GENAI-RAG.md#r9)** — bake-off → notebooks → **[R9.6](README-GENAI-RAG.md#r96)** app on Pattern 1 · HIT OK · fridge soft-MISS (tiny Granite) |
-| **Hotline RAG backlog (after AutoRAG)** | [`README-GENAI-RAG.md`](README-GENAI-RAG.md) **[R10](README-GENAI-RAG.md#r10)** — remote embeddings · Milvus · Docling · harden app · day-summary agent |
+| **Hotline AutoRAG** | [`README-GENAI.md`](README-GENAI.md) **[R9](README-GENAI.md#r9)** — bake-off → notebooks → **[R9.6](README-GENAI.md#r96)** app on Pattern 1 · HIT OK · fridge soft-MISS |
+| **Hotline RAG backlog** | [`README-GENAI.md`](README-GENAI.md) **[R10](README-GENAI.md#r10)** — remote embeddings · Milvus · Docling · harden app · day-summary agent |
 | **Later:** Autonomous day-summary agent | Calendar / mail / tools via MCP — see R10 #5 |
 
 ### How to use
