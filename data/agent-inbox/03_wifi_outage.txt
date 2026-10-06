@@ -1,0 +1,7 @@
+From: noc@campus.example
+To: you@hotline.example
+Date: Monday 08:05
+Subject: Wi-Fi down in Building C, floor 2
+
+Users cannot join SSID CAMPUS-C2. Wired ports still work.
+Please advise guests to sit near the ethernet wall jacks until radio is back.

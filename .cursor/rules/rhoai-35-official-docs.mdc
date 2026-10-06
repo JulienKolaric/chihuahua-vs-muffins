@@ -16,7 +16,8 @@ For lab work on **OpenShift AI 3.5**, the Red Hat docs below **win** over assump
 | **AutoML** | https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/working_with_automl/index |
 | **MLflow** | https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/working_with_mlflow/index |
 | **AutoRAG** | https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/working_with_autorag/index |
-| **MCP catalog** | https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/working_with_the_mcp_catalog/index |
+| **MCP catalog** (RHOAI 3.5) | https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/working_with_the_mcp_catalog/index |
+| **MCP gateway** (Connectivity Link 1.4) | https://docs.redhat.com/en/documentation/red_hat_connectivity_link/1.4/html-single/install_the_mcp_gateway/index |
 
 Local uploads under the Cursor project `uploads/` (when present) may mirror these pages — use them, but the URLs above remain canonical.
 

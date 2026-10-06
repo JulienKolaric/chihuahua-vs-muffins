@@ -1,0 +1,7 @@
+From: kitchen@office.example
+To: you@hotline.example
+Date: Monday 08:22
+Subject: Coffee machine prints a PDF
+
+The machine on floor 1 ejects a PDF instead of a cup.
+Funny, not a safety issue. Can wait until after 10:00.

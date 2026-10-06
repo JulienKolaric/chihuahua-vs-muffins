@@ -1,0 +1,7 @@
+From: facilities@building.example
+To: you@hotline.example
+Date: Monday 07:12
+Subject: URGENT — Lift A stuck between floors 3 and 4
+
+Lift A is not moving. Two people inside. Door status unknown.
+Please treat as safety first. Ticket hint from last month: LIFT-MON-1.

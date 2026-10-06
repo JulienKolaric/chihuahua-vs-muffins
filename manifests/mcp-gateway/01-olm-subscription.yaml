@@ -1,0 +1,33 @@
+# MCP gateway Operator — Red Hat Connectivity Link 1.4 (OLM)
+# Docs: https://docs.redhat.com/en/documentation/red_hat_connectivity_link/1.4/html-single/install_the_mcp_gateway/index
+#        ch. 1.1 Install the MCP gateway with OLM
+#
+# Use RHCL **1.4.1 or later** (1.4.0 is deprecated).
+# Channel `preview` · catalog `redhat-operators` — as in the official example.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mcp-system
+  labels:
+    kubernetes.io/metadata.name: mcp-system
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: mcp-gateway
+  namespace: mcp-system
+spec:
+  targetNamespaces:
+    - mcp-system
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: mcp-gateway
+  namespace: mcp-system
+spec:
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+  name: mcp-gateway
+  channel: preview

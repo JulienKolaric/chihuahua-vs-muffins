@@ -11,7 +11,7 @@
 
 **One-liner for the room:** same OpenShift AI cluster, **different product surface** — scores vs sentences.
 
-Hub: [`README.md`](README.md)
+Hub: [`README.md`](README.md) · Agentic (separate): [`README-GENAI-AGENT.md`](README-GENAI-AGENT.md)
 
 Source of truth (wins over assumptions):
 
@@ -577,6 +577,8 @@ Still out of this *chat* slice:
 
 **RAG / AutoRAG** are **in** this same README starting at [R0](#r0) — not a second lab file.
 
+**Agentic AI** (tools / MCP / inbox briefing) is a **new** lab: [`README-GENAI-AGENT.md`](README-GENAI-AGENT.md).
+
 ---
 
 # Hotline KB RAG (same lab)
@@ -1121,6 +1123,8 @@ Playground storage is for experiments and disappears with the playground. A hotl
 
 **How we install it here:** we deploy our own PostgreSQL in the project (`hotline-rag-pgvector`), run `CREATE EXTENSION vector` on first start (init script), then point a dedicated `OGXServer` at it with `ENABLE_PGVECTOR=true`. We do **not** reuse Playground’s `genai-pgvector`.
 
+**Alternative (not in this lab):** OGX also supports **remote Milvus** (`MILVUS_ENDPOINT`, gRPC 19530, dedicated etcd — never the OpenShift control plane). Same Hotline RAG APIs; useful at larger scale / hybrid search. We already have grounded RAG on pgvector — we **do not** deploy Milvus here. See [Select and deploy a vector database](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/working_with_ogx/select-and-deploy-a-vector-database_rag).
+
 ### Success looks like
 - `hotline-rag-pgvector` Deployment **1/1 Ready** → pod **`hotline-rag-pgvector-…`**
 - `OGXServer/hotline-rag-ogx` **Ready** → pod **`hotline-rag-ogx-…`** · Service `hotline-rag-ogx-service:8321`
@@ -1253,8 +1257,6 @@ oc -n "$NS" delete ogxserver/hotline-rag-ogx --ignore-not-found
 oc -n "$NS" delete -f manifests/hotline-rag/02-secrets.yaml --ignore-not-found
 oc -n "$NS" delete -f manifests/hotline-rag/01-postgres-pgvector.yaml --ignore-not-found
 ```
-
-**Milvus later:** official path is Milvus + dedicated etcd, then `provider_id: milvus-remote` in the same notebook style — heavier; pgvector is the install we do here.
 
 ---
 
@@ -1849,10 +1851,9 @@ Keep the room focused; do not lose later ideas.
 | # | Topic | Why / starting point |
 |---|--------|----------------------|
 | 1 | **Remote embedding model** | Official production-style path when a 2nd GPU / remote embedder is available — today: inline sentence-transformers on the OGX pod |
-| 2 | **Milvus** (instead of / beside pgvector) | Large-scale vector store — [vector database chapter](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/working_with_ogx/select-and-deploy-a-vector-database_rag) |
-| 3 | **Docling ingest pipeline** | PDFs / messy docs → Markdown → same OGX store |
-| 4 | **Harden `hotline-rag-chat`** | Auth on Route · ConfigMap/Secret for `VECTOR_STORE_ID` |
-| 5 | **Day-summary agent + MCP** | Separate Gen AI story — hub “Later” item |
+| 2 | **Docling ingest pipeline** | PDFs / messy docs → Markdown → same OGX store |
+| 3 | **Harden `hotline-rag-chat`** | Auth on Route · ConfigMap/Secret for `VECTOR_STORE_ID` |
+| 4 | **Agentic / MCP** | Separate beginner lab — [`README-GENAI-AGENT.md`](README-GENAI-AGENT.md) |
 
 Hub pointer: [`README.md`](README.md) Optional / related.
 
