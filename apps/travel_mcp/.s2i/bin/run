@@ -1,0 +1,4 @@
+#!/bin/bash
+set -euo pipefail
+PORT="${PORT:-8080}"
+exec python server.py

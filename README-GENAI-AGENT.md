@@ -47,6 +47,11 @@ Playground / OGX / MCP catalog / MCP gateway are **Technology Preview**.
 | E2 | [Register it for Playground](#e2) | ✅ Desk-Inbox-MCP listed |
 | E3 | [Authorize MCP + tools](#e3) | ✅ 2/2 tools |
 | E4 | [Ask the briefing question](#e4) | ✅ list_inbox · wifi follow-up HIT (body facts) |
+| T0 | [Travel agent — public APIs](#t0) | ✅ public APIs, no catalog card |
+| T1 | [Deploy travel MCP](#t1) | ✅ Route JSON + egress 200 |
+| T2 | [Register Travel-MCP in Playground](#t2) | ✅ |
+| T3 | [Ask a destination](#t3) | ✅ follow-up get_trip_brief HIT |
+| T4 | [Add public holidays tool](#t4) | ✅ get_public_holidays · 5 Oct Republic Day |
 | M6 | [Later — OpenShift MCP](#m6) | park |
 | A5 | [Later](#a5) | park |
 
@@ -976,6 +981,234 @@ Tiny Granite may pass `03_wifi_outage.txt`; `read_email` accepts **with or witho
 
 ---
 
+<a id="t0"></a>
+
+# T0 — Travel agent (scenario B: public APIs)
+
+### What we want
+A second agent: **trip brief** for a city, with numbers from the internet — not from Granite’s memory.
+
+### Why
+The [MCP catalog](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html-single/working_with_the_mcp_catalog/index) on this sandbox showed **OpenShift / AAP / Insights** and partners (Azure, Terraform, …). **No travel / weather card.** Partner APIs need your cloud accounts. Scenario B here is therefore a **small MCP we own** that calls **public APIs with no key**: [Open-Meteo](https://open-meteo.com/) (geocode + forecast), [REST Countries](https://restcountries.com/), and [Nager.Date](https://date.nager.at) (holidays, [T4](#t4)). Same Playground plug as the inbox ([ConfigMap `gen-ai-aa-mcp-servers`](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/experimenting_with_models_in_the_gen_ai_playground/playground-prerequisites_rhoai-user)).
+
+### Success looks like
+- You can say: catalog ≠ travel; we wrap Open-Meteo
+- Cluster pods can reach `api.open-meteo.com` (egress). If not, tools return an error string — do not invent weather
+
+### How
+
+**Pieces (same four as [E0](#e0), new names):**
+
+| Piece | Name |
+|-------|------|
+| Code | [`apps/travel_mcp/`](apps/travel_mcp/) |
+| Workload | Deployment **`travel-mcp`** · tools **`lookup_place`**, **`get_trip_brief`**, **`get_public_holidays`** |
+| Door | Route **`travel-mcp`** · health `/` · MCP **`/mcp`** |
+| Playground list | ConfigMap key **`Travel-MCP`** |
+
+Uncheck **Desk-Inbox-MCP** when you test travel (one story at a time).
+
+Need: E1 pattern already works in `genai-agent` · cluster-admin for T2 · **outbound HTTPS** from the `travel-mcp` pod.
+
+No command in T0. Continue at [T1](#t1).
+
+---
+
+<a id="t1"></a>
+
+# T1 — Deploy the travel MCP
+
+### What we want
+Running **`travel-mcp`** in **`genai-agent`**. CPU only.
+
+### Why
+The Playground cannot call Open-Meteo itself. This pod runs the travel tools.
+
+### Success looks like
+- `travel-mcp` 1/1 Running
+- `GET https://<route>/` → JSON `status: ok`
+
+### How
+
+From **repo root**:
+
+```bash
+NS=genai-agent
+
+oc -n "$NS" new-build --name=travel-mcp --binary --strategy=source \
+  --image-stream=python:3.12-ubi9
+
+oc -n "$NS" start-build travel-mcp --from-dir=apps/travel_mcp --follow
+
+oc -n "$NS" new-app travel-mcp -e PORT=8080 -l app=travel-mcp
+
+oc -n "$NS" create route edge travel-mcp --service=travel-mcp --port=8080 \
+  --dry-run=client -o yaml | oc apply -f -
+
+oc -n "$NS" rollout status deploy/travel-mcp --timeout=300s
+HOST=$(oc -n "$NS" get route travel-mcp -o jsonpath='{.spec.host}')
+echo "https://${HOST}/"
+curl -sS "https://${HOST}/"
+```
+
+**Expected output (shape):**
+
+```text
+deployment "travel-mcp" successfully rolled out
+https://travel-mcp-genai-agent.apps.…
+{"status":"ok","mcp":"/mcp",…}
+```
+
+If the build already exists, skip `new-build` / `new-app` and only `start-build` + rollout.
+
+**Egress check (from the pod):**
+
+```bash
+oc -n genai-agent exec deploy/travel-mcp -- \
+  python -c "import urllib.request; print(urllib.request.urlopen('https://api.open-meteo.com/v1/forecast?latitude=48.85&longitude=2.35&current_weather=true', timeout=15).status)"
+```
+
+**Expected:** `200`. If it hangs or fails, the sandbox has no internet from pods — stop; Granite would invent.
+
+**Pods created:** `travel-mcp-…`
+
+---
+
+<a id="t2"></a>
+
+# T2 — Register `Travel-MCP` for Playground
+
+### What we want
+Settings → MCP lists **Travel-MCP**. Inbox can stay listed; uncheck it for this story.
+
+### Why
+Same official ConfigMap as E2. Patch **adds a key**; do not wipe `Desk-Inbox-MCP`.
+
+### Success looks like
+- Auth with token `none` → Connection successful
+- Tools: `lookup_place`, `get_trip_brief`, `get_public_holidays`
+
+### How
+
+```bash
+HOST=$(oc -n genai-agent get route travel-mcp -o jsonpath='{.spec.host}')
+echo "https://${HOST}/mcp"
+
+oc -n redhat-ods-applications patch configmap gen-ai-aa-mcp-servers --type merge -p "$(cat <<EOF
+{"data":{"Travel-MCP":"{\n  \\"url\\": \\"https://${HOST}/mcp\\",\n  \\"description\\": \\"Travel brief: Open-Meteo, REST Countries, Nager.Date. Tools: lookup_place, get_trip_brief, get_public_holidays.\\"\n}\n"}}
+EOF
+)"
+```
+
+If the ConfigMap is missing, create it like E2 with **only** `Travel-MCP` first, then re-add inbox if needed.
+
+Hard-refresh → Playground **`genai-agent`** → **MCP** → check **Travel-MCP** → Auth → `none` → tools.
+
+**Pods:** none new.
+
+---
+
+<a id="t3"></a>
+
+# T3 — Ask a destination
+
+### What we want
+A brief whose **temps / capital** match the tool JSON, not a generic tourist speech.
+
+### Why
+That is scenario B: live (or near-live) facts through MCP.
+
+### Success looks like
+- Tool **`get_trip_brief`** in the chat (weather JSON: `now.temp_c`, `next_days`)
+- Capital / currency from that JSON (`country.capital`, `currencies`)
+- **`lookup_place` alone is a MISS** — it only geocodes (name, lat, lon). Temps after that tool are invented
+
+### How
+
+Uncheck **Desk-Inbox-MCP**. **Settings → Prompt:**
+
+```text
+You are a travel desk assistant.
+You MUST call get_trip_brief for the city the user names.
+Never invent temperatures, capitals, or currencies.
+Reply in English, under 120 words: weather next 3 days, then capital and currency.
+If the tool errors, say the API failed.
+```
+
+Send:
+
+```text
+I have a long weekend in Lisbon. What should I know before I pack?
+```
+
+**Frozen (this sandbox):** first turn — **Tool: `lookup_place`**. Packing list + °C look confident. **MISS:** those temps are **not** in `lookup_place`. Same pattern as E4 skipping `read_email`.
+
+![T3 — lookup_place only (MISS weather)](docs/screenshots/step-agent-t3-lookup-place.png)
+
+**Follow-up (same chat):**
+
+```text
+Call get_trip_brief for Lisbon. Quote now.temp_c and the three next_days from the tool JSON. Do not keep the temperatures from your previous message.
+```
+
+**HIT:** accordion **`get_trip_brief`** and the spoken °C match that JSON.
+
+**Frozen (this sandbox):** follow-up — **Tool response: `get_trip_brief`**. Now 23.6 °C, Oct 6–8 highs/lows + rain mm, capital Lisbon, Euro. Those figures replaced the invented first-turn temps.
+
+![T3 — get_trip_brief HIT](docs/screenshots/step-agent-t3-trip-brief.png)
+
+Tiny Granite often picks `lookup_place` first. Lab teaching point: **open the tool accordion**. Optional later: drop `lookup_place` so the first turn must call `get_trip_brief`.
+
+---
+
+<a id="t4"></a>
+
+# T4 — Add `get_public_holidays`
+
+### What we want
+A third travel function: **national holidays** for the destination country (Lisbon → Portugal → `PT`).
+
+### Why
+Weather does not tell you if Monday is a public holiday (shops / museums). We add it **in the same MCP**, not a new catalog card. API: [Nager.Date](https://date.nager.at) (no key).
+
+### Success looks like
+- Health JSON lists `get_public_holidays`
+- Playground Auth → **3 tools**
+- Chat accordion **`get_public_holidays`** with dates from the JSON (not invented)
+
+### How
+
+Code is already in [`apps/travel_mcp/server.py`](apps/travel_mcp/server.py) (`@mcp.tool` `get_public_holidays`). Rebuild the **existing** image:
+
+```bash
+oc -n genai-agent start-build travel-mcp --from-dir=apps/travel_mcp --follow
+oc -n genai-agent rollout status deploy/travel-mcp --timeout=300s
+HOST=$(oc -n genai-agent get route travel-mcp -o jsonpath='{.spec.host}')
+curl -sS "https://${HOST}/"
+```
+
+**Expected output (shape):**
+
+```text
+{"status":"ok","mcp":"/mcp","hint":"Tools: lookup_place, get_trip_brief, get_public_holidays. …"}
+```
+
+Hard-refresh Playground → **MCP → Travel-MCP → Auth** (`none`) until **3 tools**. Prompt: add one line — *Call get_public_holidays for holidays; do not invent dates.*
+
+```text
+Are there public holidays in Portugal around 5–8 October 2026 that would close museums in Lisbon?
+```
+
+**HIT:** tool **`get_public_holidays`** and every date in the reply exists in that JSON.
+
+**Frozen (this sandbox):** accordion **`get_public_holidays`**. **Republic Day / 5 October 2026** matches Nager.Date `PT`. Nothing on 6–8 Oct. **Soft miss:** “Easter in October” is **not** in that list (Easter 2026 is April) — Granite added a sentence. Open the accordion: museum closures are also not in the API.
+
+![T4 — get_public_holidays](docs/screenshots/step-agent-t4-holidays.png)
+
+**Pods:** new `travel-mcp-…` after rollout (same Deployment).
+
+---
+
 <a id="m6"></a>
 
 # M6 — Later: plug `openshift-mcp-server` (debug pods / deployments)
@@ -1053,11 +1286,9 @@ M6 is the OpenShift debug MCP. The list below is everything else.
 
 | # | Topic |
 |---|--------|
-| 1 | **E1–E4** — fake-inbox email agent (current) |
-| 2 | **M6** — `openshift-mcp-server` (pods / deployments) |
-| 3 | Playground MCP tab already used in E2–E3 |
-| 4 | **Gateway + MCPGatewayExtension** (RHCL §1.2–1.5) if needed |
-| 5 | Real mailbox (org tokens) |
+| 1 | **M6** — `openshift-mcp-server` (pods / deployments) |
+| 2 | Real mailbox (org tokens) |
+| 3 | **Gateway + MCPGatewayExtension** (RHCL §1.4) if needed |
 
 ---
 

@@ -6,7 +6,7 @@ Hands-on labs on **one cluster / one team**. Three independent journeys (plus op
 |-----|------|-------------------|
 | **Predictive** — Chihuahua vs Muffin | [`README-PREDICTIVE.md`](README-PREDICTIVE.md) | S3 → train → **OVMS** → guardrails → **TrustyAI** → pipelines → **AutoML** |
 | **Gen AI** — Hotline (Playground → RAG → AutoRAG) | [`README-GENAI.md`](README-GENAI.md) | **`genai-hotline`** · vLLM · Open WebUI → Streamlit → Playground → **KB RAG** → AutoRAG |
-| **Agentic** — desk briefing (beginner) | [`README-GENAI-AGENT.md`](README-GENAI-AGENT.md) | **`genai-agent`** · Granite · Playground · **tools / MCP** · fake inbox (not live mail) |
+| **Agentic** — desk briefing (beginner) | [`README-GENAI-AGENT.md`](README-GENAI-AGENT.md) | **`genai-agent`** · Granite · Playground · **tools / MCP** · fake inbox · travel MCP (Open-Meteo) |
 
 | | Predictive | Gen AI chat/RAG | Agentic |
 |--|------------|-----------------|--------|
